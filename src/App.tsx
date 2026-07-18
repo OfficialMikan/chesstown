@@ -101,6 +101,7 @@ export function App() {
 
     // --- analysis (cloud engine) ---
     const runAnalysis = async () => {
+        const startMs = Date.now();
         if (!game) return;
         const token = ++analysisTokenRef.current;
         setStatus('Analyzing in parallel on the cloud…');
@@ -115,8 +116,12 @@ export function App() {
             });
 
             if (token !== analysisTokenRef.current) return;
+            if (!results || results.length === 0) {
+                setStatus('Analysis returned no results. Click 🔧 debug to see why.');
+                logger.error('analysis', 'no results returned', { fens: fens.length, depth });
+                return;
+            }
 
-            // Convert to PositionInfo, with best-move SAN
             const infos: PositionInfo[] = results.map((r, i) => {
                 const pi = toPositionInfo(r, fens[i]);
                 pi.bestSan = pi.bestMoveUci ? uciToSan(fens[i], pi.bestMoveUci) : null;
@@ -124,7 +129,6 @@ export function App() {
             });
             setPositions(infos);
 
-            // Build moveInfos
             const mi: (MoveInfo | null)[] = new Array(game.moves.length).fill(null);
             for (let i = 1; i < infos.length; i++) {
                 const before = infos[i - 1];
@@ -144,10 +148,12 @@ export function App() {
             setMoveInfos(mi);
             setStatus(`Analysis complete — ${infos.length} positions evaluated.`);
             setProgress(100);
+            logger.info('analysis', `done: ${infos.length} positions in ~${Date.now() - startMs}ms`, { depth });
         } catch (e: any) {
-            logger.error('runAnalysis', e.message);
+            logger.error('analysis', e.message, { stack: e.stack });
             setStatus('Analysis failed: ' + e.message);
         }
+
     };
 
     // Keyboard navigation

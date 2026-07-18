@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { logger, LogEntry } from '../lib/logger';
 import { pushToast } from './Toast';
 
-type Test = { ok: boolean; ms: number; error?: string; result?: any };
+type Test = { ok: boolean; ms: number; error?: string };
 
 export function DebugPanel() {
     const [open, setOpen] = useState(false);
@@ -23,10 +23,7 @@ export function DebugPanel() {
         setTests(null);
         try {
             const r = await fetch('/api/test-engine', { method: 'POST' });
-            if (!r.ok) {
-                pushToast('Diagnostic endpoint failed: HTTP ' + r.status, 'error');
-                return;
-            }
+            if (!r.ok) { pushToast('Diagnostic endpoint failed: HTTP ' + r.status, 'error'); return; }
             const j = await r.json();
             setTests(j.tests);
             const summary = j.summary;

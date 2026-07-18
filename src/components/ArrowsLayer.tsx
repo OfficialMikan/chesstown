@@ -1,8 +1,8 @@
 import { drawArrowPath, colorForMoveIndex } from '../lib/arrows';
 
 type Props = {
-    pv: string[];                          // engine's best PV (solid arrows)
-    alternativeMoves?: { uci: string; san?: string }[];  // alternative candidates
+    pv: string[];
+    alternativeMoves?: { uci: string; san?: string }[];
     flipped: boolean;
     style: 'box' | 'arrow' | 'outline' | 'native';
     pvColor: string;
@@ -13,7 +13,7 @@ type Props = {
     arrowOpacity: number;
     showNumbers: boolean;
     size: number;
-    bestUci?: string | null;               // explicitly the single best move
+    bestUci?: string | null;
 };
 
 const sq = (uci: string) => {
@@ -26,9 +26,6 @@ export function ArrowsLayer({
     pv, alternativeMoves = [], flipped, style, pvColor, altColor,
     pvGradient, pvCustomGradient, arrowWidth, arrowOpacity, showNumbers, size, bestUci,
 }: Props) {
-    // Best move = single arrow with high opacity
-    // PV continuation = same arrow, but tail (lower opacity, optional)
-    // Alternatives = dashed, lower opacity, distinct color
     const bestMoves = bestUci ? [bestUci] : pv.slice(0, 1);
     const continuationMoves = pv.slice(1, 5);
     const altUcis = alternativeMoves
@@ -42,7 +39,6 @@ export function ArrowsLayer({
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
             preserveAspectRatio="none"
         >
-            {/* Alternative moves: dashed, low opacity, distinct color */}
             {style === 'arrow' && altUcis.map((u, i) => {
                 const { f, t } = sq(u);
                 const p = drawArrowPath(f, t, flipped, arrowWidth * 0.7, arrowOpacity * 0.5);
@@ -55,7 +51,6 @@ export function ArrowsLayer({
                 );
             })}
 
-            {/* PV continuation: thin, faded */}
             {style === 'arrow' && continuationMoves.map((u, i) => {
                 const { f, t } = sq(u);
                 const p = drawArrowPath(f, t, flipped, arrowWidth * 0.6, arrowOpacity * 0.6);
@@ -74,7 +69,6 @@ export function ArrowsLayer({
                 );
             })}
 
-            {/* Best move: solid, full opacity, prominent */}
             {style === 'arrow' && bestMoves.map((u, i) => {
                 const { f, t } = sq(u);
                 const p = drawArrowPath(f, t, flipped, arrowWidth, arrowOpacity);
@@ -92,7 +86,6 @@ export function ArrowsLayer({
                 );
             })}
 
-            {/* Box / outline fallbacks (no differentiation) */}
             {style === 'box' && pv.slice(0, 3).map((m, i) => {
                 const { f, t } = sq(m);
                 return (

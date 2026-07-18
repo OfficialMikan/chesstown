@@ -15,7 +15,7 @@ export function EngineSettingsModal({ modelId, onModelChange, onClose, models }:
     const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' };
     const modalBox: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, width: 480, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' };
     const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid var(--line)' };
-    const fullSelect: React.CSSProperties = { width: '100%', padding: '8px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--line)', borderRadius: 5 };
+    const fullSelect: React.CSSProperties = { width: '100%', padding: '8px', background: 'var(--ink)', color: 'var(--text)', border: '1px solid var(--line)', borderRadius: 5 };
 
     return (
         <div style={overlay} onClick={onClose}>

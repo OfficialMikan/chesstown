@@ -12,11 +12,11 @@ import { FullscreenBoard } from './components/FullscreenBoard';
 import { HelpDialog } from './components/HelpDialog';
 import { DebugPanel } from './components/DebugPanel';
 import { ToastContainer, pushToast } from './components/Toast';
-import { analyzeAll, toPositionInfo, analyzeFen } from './lib/engine';
+import { analyzeAll, toPositionInfo } from './lib/engine';
 import { buildMovesFromPgn, classify, formatEval, squareToRowCol, START_FEN, uciToSan } from './lib/chess';
 import { logger } from './lib/logger';
 import { detectOpening } from './lib/openings';
-import { buildSuggestions, detectThreats, Suggestion, Threat } from './lib/suggest';
+import { detectThreats } from './lib/suggest';
 import type { EngineModelId, MoveInfo, PositionInfo } from './lib/types';
 
 const ENGINE_MODELS = [
@@ -43,8 +43,6 @@ export function App() {
     const [showFullscreen, setShowFullscreen] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
     const [depth, setDepth] = useState(16);
-    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-    const [threats, setThreats] = useState<Threat[]>([]);
     const analysisTokenRef = useRef(0);
 
     const loadGames = async (u: string) => {
@@ -82,7 +80,6 @@ export function App() {
             setCurrentPly(0);
             setPositions(new Array(moves.length + 1).fill(null));
             setMoveInfos(new Array(moves.length).fill(null));
-            setSuggestions([]); setThreats([]);
             setStatus('Game loaded. Click <b>Analyze</b>.');
         } catch (e: any) {
             setStatus('PGN parse error: ' + e.message);
@@ -97,7 +94,6 @@ export function App() {
             setCurrentPly(0);
             setPositions(new Array(moves.length + 1).fill(null));
             setMoveInfos(new Array(moves.length).fill(null));
-            setSuggestions([]); setThreats([]);
             setStatus('PGN loaded. Click <b>Analyze</b>.');
         } catch (e: any) {
             setStatus('PGN parse error: ' + e.message);
@@ -146,7 +142,6 @@ export function App() {
         }
     };
 
-    // Compute current state
     const curPos = positions[currentPly] ?? null;
     const lastMove = useMemo(() => {
         if (!game || currentPly === 0) return null;
@@ -156,107 +151,18 @@ export function App() {
         return { fromRow: a.row, fromCol: a.col, toRow: b.row, toCol: b.col };
     }, [game, currentPly]);
 
-    // Opening detection
     const sanMoves = useMemo(() => game?.moves.map(m => m.san) ?? [], [game]);
     const opening = useMemo(() => detectOpening(sanMoves), [sanMoves]);
 
-    // Refresh threats when ply changes
-    useEffect(() => {
-        if (!game || !curPos) { setThreats([]); return; }
-        const fen = curPos.fen;
-        try { setThreats(detectThreats(fen)); } catch { setThreats([]); }
-    }, [curPos, game]);
+    const threats = useMemo(() => {
+        if (!curPos) return [];
+        try { return detectThreats(curPos.fen); } catch { return []; }
+    }, [curPos]);
 
-    // Build alternative moves for the arrow layer
     const alternativeMoves = useMemo(() => {
         if (!curPos) return [];
         return curPos.pv.slice(1, 4).map(uci => ({ uci }));
     }, [curPos]);
-
-    // Coach helpers
-    const onAsk = (text: string) => {
-        // CoachPanel just collects the question, the actual streaming happens
-        // via direct fetch in main CoachPanel flow. For the new "Suggest" and
-        // "Threats" buttons we generate rich local responses.
-        const ply = currentPly;
-        const pos = curPos;
-
-        if (text.toLowerCase().includes('suggest')) {
-            if (!pos) { pushCoach('<i>Click <b>Analyze</b> first so I can see the engine output.</i>'); return; }
-            buildSuggestions(pos.fen, pos.cpWhitePov, analyzeFen, 4).then(s => {
-                setSuggestions(s.slice(0, 4));
-                const html = s.length === 0 ? '<i>No legal moves found.</i>'
-                    : '<b>Top moves for you:</b><br>' + s.slice(0, 4).map(x =>
-                        `<b>${x.san}</b> — eval ${(x.evalCp / 100).toFixed(2)}${x.deltaCp !== 0 ? ` (${x.deltaCp > 0 ? '+' : ''}${(x.deltaCp / 100).toFixed(2)} vs current)` : ''} — <span style="color:var(--text-dim)">${x.classification}</span>`
-                    ).join('<br>');
-                pushCoach(html);
-            });
-            return;
-        }
-        if (text.toLowerCase().includes('threat')) {
-            const t = threats;
-            const html = t.length === 0
-                ? '<i>No immediate threats detected on this position.</i>'
-                : `<b>Opponent threats:</b><br>` + t.map(x => `<b>${x.san}</b> — ${x.description}`).join('<br>');
-            pushCoach(html);
-            return;
-        }
-
-        // Default: send the question to /api/coach and stream into chat
-        const msgs = (window as any).__coachHistory || [];
-        (window as any).__coachHistory = [...msgs, { role: 'user', content: text }];
-        const context = {
-            ply, fen: pos?.fen, evalCp: pos?.cpWhitePov, bestMoveSan: pos?.bestSan, pv: pos?.pv,
-            lastMove: ply > 0 ? { san: game.moves[ply - 1]?.san, info: moveInfos[ply - 1] } : null,
-            userSide: game.userIsWhite ? 'white' : 'black',
-        };
-        fetch('/api/coach', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: text, context }) })
-            .then(async r => {
-                if (!r.ok || !r.body) throw new Error('Coach HTTP ' + r.status);
-                const reader = r.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '', acc = '';
-                pushCoach('<span style="opacity:.6">thinking…</span>');
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n'); buffer = lines.pop() ?? '';
-                    for (const line of lines) {
-                        if (!line.startsWith('data:')) continue;
-                        const payload = line.slice(5).trim();
-                        if (payload === '[DONE]') continue;
-                        try { const o = JSON.parse(payload); if (typeof o.content === 'string') acc += o.content; } catch { }
-                    }
-                    if (acc) updateLastCoach(formatMdLite(acc));
-                }
-                if (!acc) updateLastCoach('<i>Coach returned no content. Try again or check the debug panel.</i>');
-            })
-            .catch(err => {
-                logger.error('coach', err.message);
-                updateLastCoach(`<i>Coach error: ${err.message}</i>`);
-            });
-    };
-
-    // Helpers for the coach panel to push messages in
-    const pushCoach = (html: string) => {
-        (window as any).__setCoachMsg?.(html);
-    };
-    const updateLastCoach = (html: string) => {
-        (window as any).__updateLastCoach?.(html);
-    };
-
-    // Expose hooks to CoachPanel
-    useEffect(() => {
-        (window as any).__setCoachMsg = (html: string) => {
-            const ev = new CustomEvent('coach-append', { detail: html });
-            window.dispatchEvent(ev);
-        };
-        (window as any).__updateLastCoach = (html: string) => {
-            const ev = new CustomEvent('coach-replace-last', { detail: html });
-            window.dispatchEvent(ev);
-        };
-    }, []);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -294,9 +200,10 @@ export function App() {
         );
     })();
 
+    const threatSummary = threats.map(t => ({ san: t.san, description: t.description }));
+
     return (
         <div style={{ maxWidth: 1480, margin: '0 auto', padding: '24px 16px' }}>
-            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 }}>
                 <div>
                     <h1 style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 600, margin: 0, letterSpacing: '-.3px' }}>Chesstown</h1>
@@ -307,7 +214,6 @@ export function App() {
                 <button onClick={() => setShowHelp(true)} className="ghost" style={{ fontSize: 12 }}>? Shortcuts</button>
             </div>
 
-            {/* Setup card */}
             <div className="card" style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <div style={{ flex: '1 1 240px' }}>
@@ -346,13 +252,12 @@ export function App() {
                 )}
             </div>
 
-            {/* Analyze controls */}
             {game && (
                 <div className="card" style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                         <div>
                             <div className="eyebrow" style={{ marginBottom: 6 }}>ENGINE DEPTH</div>
-                            <div style={{ display: 'inline-flex', gap: 4, padding: 3, background: 'var(--bg)', borderRadius: 6, border: '1px solid var(--line)' }}>
+                            <div style={{ display: 'inline-flex', gap: 4, padding: 3, background: 'var(--ink)', borderRadius: 6, border: '1px solid var(--line)' }}>
                                 {[12, 16, 20].map(d => (
                                     <button key={d} onClick={() => setDepth(d)} style={{ background: depth === d ? 'var(--accent)' : 'transparent', color: depth === d ? '#0c0c0c' : 'var(--text-dim)', border: 'none', fontWeight: depth === d ? 600 : 500, padding: '6px 14px', borderRadius: 4 }}>{d === 12 ? 'Fast' : d === 16 ? 'Balanced' : 'Deep'}</button>
                                 ))}
@@ -372,19 +277,10 @@ export function App() {
                 </div>
             )}
 
-            {/* Workspace */}
             {game && (
                 <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'minmax(280px, 380px) 1fr minmax(320px, 420px)', gap: 16, alignItems: 'start' }}>
-                    {/* Board column */}
                     <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                        {opening && (
-                            <div style={{ width: '100%' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: 'var(--bg)', borderRadius: 4 }}>
-                                    <span className="eyebrow" style={{ color: 'var(--text-dim)' }}>{opening.eco}</span>
-                                    <span style={{ fontWeight: 600, fontSize: 13 }}>{opening.name}</span>
-                                </div>
-                            </div>
-                        )}
+                        {opening && <OpeningName sanMoves={sanMoves} />}
                         <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', width: '100%', maxWidth: 380, justifyContent: 'center' }}>
                             <EvalBar pos={curPos} height={360} width={20} />
                             <div style={{ flex: 1, position: 'relative' }}>
@@ -418,15 +314,13 @@ export function App() {
                         <div style={{ minHeight: 80, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-dim)', width: '100%' }}>{detail}</div>
                     </div>
 
-                    {/* Moves + summary column */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <MoveList moves={game.moves} moveInfos={moveInfos} currentPly={currentPly} onSelect={setCurrentPly} />
                         <GameGraph positions={positions} currentPly={currentPly} onSelect={setCurrentPly} />
                         <SummaryCards moves={game.moves} moveInfos={moveInfos} userIsWhite={game.userIsWhite} onJump={setCurrentPly} />
                     </div>
 
-                    {/* Coach column */}
-                    <CoachPanelWithBridge
+                    <CoachPanel
                         currentPos={curPos}
                         currentPly={currentPly}
                         moves={game.moves}
@@ -434,14 +328,11 @@ export function App() {
                         moveInfos={moveInfos}
                         onJump={setCurrentPly}
                         userIsWhite={game.userIsWhite}
-                        onAsk={onAsk}
-                        onSuggest={() => onAsk('suggest')}
-                        onThreats={() => onAsk('threat')}
+                        threats={threatSummary}
                     />
                 </div>
             )}
 
-            {/* Modals */}
             <FullscreenBoard
                 open={showFullscreen}
                 onClose={() => setShowFullscreen(false)}
@@ -449,8 +340,6 @@ export function App() {
                 lastMove={lastMove}
                 flipped={flipped}
                 pos={curPos}
-                showPV={true}
-                showAlt={true}
                 onFlip={() => setFlipped(f => !f)}
             />
             <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
@@ -468,29 +357,6 @@ export function App() {
     );
 }
 
-// Wrapper that hooks into the global coach history setters
-import { useEffect as useEff2 } from 'react';
-function CoachPanelWithBridge(props: any) {
-    const [history, setHistory] = useState<{ role: string; html: string; pending?: boolean }[]>([
-        { role: 'coach', html: "<b>Hi, I'm your AI Coach.</b><br><br>Analyze a game, then ask me about any position." },
-    ]);
-    useEffect(() => {
-        const onAppend = (e: any) => {
-            setHistory(h => [...h, { role: 'coach', html: e.detail, pending: true }]);
-        };
-        const onReplace = (e: any) => {
-            setHistory(h => h.map((m, i) => i === h.length - 1 ? { ...m, html: e.detail, pending: false } : m));
-        };
-        window.addEventListener('coach-append', onAppend);
-        window.addEventListener('coach-replace-last', onReplace);
-        return () => {
-            window.removeEventListener('coach-append', onAppend);
-            window.removeEventListener('coach-replace-last', onReplace);
-        };
-    }, []);
-    return <CoachPanel {...props} _history={history} _setHistory={setHistory} />;
-}
-
 function PgnPaste({ onPaste }: { onPaste: (pgn: string) => void }) {
     const [val, setVal] = useState('');
     return (
@@ -499,10 +365,4 @@ function PgnPaste({ onPaste }: { onPaste: (pgn: string) => void }) {
             <button className="ghost" onClick={() => { if (val.trim()) { onPaste(val); setVal(''); } }}>Load PGN</button>
         </div>
     );
-}
-
-function formatMdLite(s: string): string {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-        .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<i>$1</i>');
 }

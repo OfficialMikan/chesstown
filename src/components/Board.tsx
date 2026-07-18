@@ -1,6 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, ReactNode } from 'react';
 import { fenToBoard } from '../lib/chess';
-import { ReactNode } from 'react';
 
 type Props = {
     fen: string;
@@ -72,7 +71,6 @@ export function Board({ fen, lastMove, flipped, width = 360, children }: Props) 
                     (lastMove.toRow === br && lastMove.toCol === bc)
                 );
                 hlRefs.current[vr][vc].setAttribute('opacity', isLast ? '0.6' : '0');
-
                 const piece = board[br][bc];
                 const pn = pieceRefs.current[vr][vc];
                 if (piece) {
@@ -86,9 +84,8 @@ export function Board({ fen, lastMove, flipped, width = 360, children }: Props) 
         }
     }, [fen, lastMove, flipped]);
 
-    // Container uses flex so the eval bar + board sit on the same baseline
     return (
-        <div style={{ position: 'relative', display: 'block', width }}>
+        <div style={{ position: 'relative', display: 'block', width: '100%' }}>
             <svg
                 ref={ref}
                 viewBox="0 0 360 360"

@@ -1,6 +1,3 @@
-// Thin client for the serverless /api/analyze endpoint. With deduplication so
-// we don't re-request the same FEN twice (FEN-based cache for the session).
-
 import type { PositionInfo } from './types';
 
 export type AnalyzeResponse = {
@@ -22,7 +19,7 @@ export async function analyzeFen(fen: string, depth = 16): Promise<AnalyzeRespon
     const key = `${depth}:${fen}`;
     const cached = FEN_TO_RESULT.get(key);
     if (cached) return cached;
-    if (INFLIGHT.has(key)) return null; // another call is already fetching this
+    if (INFLIGHT.has(key)) return null;
     INFLIGHT.add(key);
     const p = (async () => {
         try {
@@ -71,7 +68,7 @@ export function analyzeAll(
                 const i = next++;
                 if (i >= fens.length) return;
                 const r = await analyzeFen(fens[i], depth);
-                results[i] = r;
+                if (r) results[i] = r;
                 done++;
                 onProgress?.(done, fens.length);
             }

@@ -10,12 +10,10 @@ type Props = {
     lastMove: { fromRow: number; fromCol: number; toRow: number; toCol: number } | null;
     flipped: boolean;
     pos: PositionInfo | null;
-    showPV: boolean;
-    showAlt: boolean;
     onFlip: () => void;
 };
 
-export function FullscreenBoard({ open, onClose, fen, lastMove, flipped, pos, showPV, showAlt, onFlip }: Props) {
+export function FullscreenBoard({ open, onClose, fen, lastMove, flipped, pos, onFlip }: Props) {
     useEffect(() => {
         if (!open) return;
         const onKey = (e: KeyboardEvent) => {
@@ -28,6 +26,8 @@ export function FullscreenBoard({ open, onClose, fen, lastMove, flipped, pos, sh
 
     if (!open) return null;
 
+    const size = Math.min(window.innerWidth - 60, window.innerHeight - 80);
+
     return (
         <div
             onClick={onClose}
@@ -38,8 +38,8 @@ export function FullscreenBoard({ open, onClose, fen, lastMove, flipped, pos, sh
                 padding: 20,
             }}
         >
-            <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
-                <Board fen={fen} lastMove={lastMove} flipped={flipped} width={Math.min(window.innerWidth - 60, window.innerHeight - 60)}>
+            <div onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
+                <Board fen={fen} lastMove={lastMove} flipped={flipped} width={size}>
                     <ArrowsLayer
                         pv={pos?.pv ?? []}
                         flipped={flipped}
@@ -51,7 +51,8 @@ export function FullscreenBoard({ open, onClose, fen, lastMove, flipped, pos, sh
                         arrowWidth={20}
                         arrowOpacity={0.9}
                         showNumbers={true}
-                        size={600}
+                        size={size}
+                        bestUci={pos?.bestMoveUci ?? null}
                     />
                 </Board>
                 <button

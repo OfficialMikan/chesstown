@@ -1,8 +1,7 @@
 import { Chess } from 'chess.js';
 import type { Classification } from './types';
 
-export { buildMovesFromPgn, parsePgnHeaders, parsePgn, extractSanSequence, STANDARD_STARTING } from './pgn';
-export type { ParsedMove, ParsedPgn } from './pgn';
+export { buildMovesFromPgn, parsePgnHeaders, parsePgn, STANDARD_STARTING } from './pgn';
 
 export const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -12,9 +11,7 @@ export const PIECE_LOOKUP: Record<string, string> = {
 };
 
 export function createChess(fen?: string): Chess {
-    if (typeof Chess !== 'function') {
-        throw new Error('chess.js failed to load (no Chess constructor)');
-    }
+    if (typeof Chess !== 'function') throw new Error('chess.js failed to load');
     return fen ? new Chess(fen) : new Chess();
 }
 
@@ -23,11 +20,8 @@ export function fenToBoard(fen: string): (string | null)[][] {
     return rows.map(row => {
         const r: (string | null)[] = [];
         for (const c of row) {
-            if (/\d/.test(c)) {
-                for (let i = 0; i < +c; i++) r.push(null);
-            } else {
-                r.push(c);
-            }
+            if (/\d/.test(c)) { for (let i = 0; i < +c; i++) r.push(null); }
+            else r.push(c);
         }
         return r;
     });
@@ -47,14 +41,11 @@ export function uciToSan(fen: string, uci: string): string | null {
     if (!uci || uci.length < 4) return null;
     try {
         const c = createChess(fen);
-        const from = uci.slice(0, 2);
-        const to = uci.slice(2, 4);
+        const from = uci.slice(0, 2), to = uci.slice(2, 4);
         const promotion = uci.length > 4 ? uci[4].toLowerCase() : undefined;
         const m = c.move({ from, to, promotion });
         return m?.san ?? null;
-    } catch {
-        return null;
-    }
+    } catch { return null; }
 }
 
 export function classify(loss: number, isMate: boolean): Classification {

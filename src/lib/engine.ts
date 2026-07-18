@@ -5,14 +5,15 @@ export type AnalyzeResponse = {
     depth: number;
     bestMove: string | null;
     pv: string[];
-    cp: number | null;
+    cp: number | null;       // raw engine centipawns, white POV (signed)
     mate: number | null;
+    cpWhitePov: number;      // from the perspective of the side to move (signed)
     nps: number;
     timeMs: number;
     source: string;
 };
 
-const FEN_TO_RESULT = new Map<string, Promise<AnalyzeResponse>>();
+const FEN_TO_RESULT = new Map<string, Promise<AnalyzeResponse | null>>();
 const INFLIGHT = new Set<string>();
 
 export async function analyzeFen(fen: string, depth = 16): Promise<AnalyzeResponse | null> {
@@ -32,10 +33,20 @@ export async function analyzeFen(fen: string, depth = 16): Promise<AnalyzeRespon
                 console.error('analyze HTTP', r.status, await r.text().catch(() => ''));
                 return null;
             }
-            const j = (await r.json()) as AnalyzeResponse;
+            const j = (await r.json()) as Omit<AnalyzeResponse, 'cpWhitePov'>;
             if (!j.bestMove) return null;
-            FEN_TO_RESULT.set(key, Promise.resolve(j));
-            return j;
+            const wtm = j.fen.split(' ')[1] === 'w';
+            let cpWhitePov = 0;
+            if (j.mate !== null) {
+                cpWhitePov = wtm
+                    ? (j.mate >= 0 ? 100000 - j.mate : -100000 - j.mate)
+                    : (j.mate >= 0 ? -100000 + j.mate : 100000 + j.mate);
+            } else if (j.cp !== null) {
+                cpWhitePov = wtm ? j.cp : -j.cp;
+            }
+            const full: AnalyzeResponse = { ...j, cpWhitePov };
+            FEN_TO_RESULT.set(key, Promise.resolve(full));
+            return full;
         } catch (e: any) {
             console.error('analyze fetch failed', e);
             return null;
@@ -80,19 +91,10 @@ export function analyzeAll(
 }
 
 export function toPositionInfo(r: AnalyzeResponse, fen: string): PositionInfo {
-    const wtm = fen.split(' ')[1] === 'w';
-    let cpWhitePov = 0;
-    if (r.mate !== null) {
-        cpWhitePov = wtm
-            ? (r.mate >= 0 ? 100000 - r.mate : -100000 - r.mate)
-            : (r.mate >= 0 ? -100000 + r.mate : 100000 + r.mate);
-    } else if (r.cp !== null) {
-        cpWhitePov = wtm ? r.cp : -r.cp;
-    }
     return {
         fen,
         score: r.mate !== null ? { type: 'mate', value: r.mate } : (r.cp !== null ? { type: 'cp', value: r.cp } : null),
-        cpWhitePov,
+        cpWhitePov: r.cpWhitePov,
         bestMoveUci: r.bestMove,
         bestSan: null,
         pv: r.pv,

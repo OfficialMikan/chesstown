@@ -8,8 +8,9 @@ export function DebugDrawer() {
 
     useEffect(() => {
         const unsub = logger.subscribe(setEntries);
-        return unsub;
+        return () => { unsub(); };
     }, []);
+
 
     // Global toggle: Ctrl+` (backtick) opens/closes
     useEffect(() => {

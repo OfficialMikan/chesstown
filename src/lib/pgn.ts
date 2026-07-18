@@ -1,6 +1,6 @@
-// PGN parsing utilities. Wraps chess.js v1.x with a safe fallback for the
-// legacy global constructor, then extracts a flat list of moves with FEN
-// snapshots and a parsed headers dict.
+// PGN parsing utilities. Wraps chess.js v1.x and provides a flat list of
+// moves with FEN snapshots and parsed headers. chess.js v1 changed load_pgn
+// → loadPgn and returns `this`, so we treat it as void and check history().
 
 import { Chess } from 'chess.js';
 
@@ -9,16 +9,15 @@ export type ParsedMove = {
     moveNumber: number;     // 1-indexed; 1 = first pair
     color: 'w' | 'b';
     san: string;            // Standard Algebraic Notation
-    uci: string;            // UCI representation
-    from: string;           // origin square
-    to: string;             // destination square
+    uci: string;            // UCI representation (from + to + promotion)
+    from: string;
+    to: string;
     fenBefore: string;
     fenAfter: string;
     piece: string;          // moved piece letter, e.g. 'N' for knight
-    captured?: string;      // piece captured, if any
-    promotion?: string;     // 'q', 'r', 'b', 'n'
-    flags: string;          // chess.js flags string
-    nag?: number[];         // numeric annotation glyphs (! ?, ??, etc.)
+    captured?: string;
+    promotion?: string;
+    flags: string;
 };
 
 export type ParsedPgn = {
@@ -28,7 +27,7 @@ export type ParsedPgn = {
     initialFen: string;
 };
 
-const STANDARD_STARTING = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+export const STANDARD_STARTING = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 function safeChess(fen?: string): Chess {
     if (typeof Chess !== 'function') {
@@ -39,7 +38,6 @@ function safeChess(fen?: string): Chess {
 
 export function parsePgnHeaders(pgn: string): Record<string, string> {
     const out: Record<string, string> = {};
-    // Strip BOM, normalize line endings
     const clean = pgn.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
     const re = /^\[(\w+)\s+"([^"]*)"\]\s*$/gm;
     let m: RegExpExecArray | null;
@@ -51,14 +49,19 @@ export function buildMovesFromPgn(pgn: string): ParsedMove[] {
     const cleaned = pgn
         .replace(/^\uFEFF/, '')
         .replace(/\r\n?/g, '\n')
-        // strip comments and NAGs but keep move text
         .replace(/\{[^}]*\}/g, '')
         .replace(/;[^}\n]*/g, '')
         .replace(/\$\d+/g, '');
 
     const loader = safeChess();
-    const ok = loader.loadPgn(cleaned, { strict: false });
-    if (!ok) throw new Error("Couldn't parse this game's moves.");
+    try {
+        loader.loadPgn(cleaned, { strict: false });
+    } catch {
+        throw new Error("Couldn't parse this game's moves.");
+    }
+    if (loader.history().length === 0) {
+        throw new Error("This PGN has no moves.");
+    }
 
     const verbose = loader.history({ verbose: true });
     const replay = safeChess();
@@ -96,10 +99,6 @@ export function parsePgn(pgn: string): ParsedPgn {
     return { headers, moves, result, initialFen };
 }
 
-/**
- * Extract a SAN sequence (e.g. "1. e4 e5 2. Nf3 Nc6") from arbitrary PGN-like
- * text. Used to validate the user pasted something reasonable.
- */
 export function extractSanSequence(pgn: string): string {
     return pgn
         .replace(/\{[^}]*\}/g, '')

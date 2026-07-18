@@ -48,7 +48,7 @@ async function buildEngine(model: EngineModel): Promise<Worker> {
         cacheGet<ArrayBuffer>(cacheKeyWasm),
     ]);
     if (!js) { js = await fetchText(model.jsUrl); await cachePut(cacheKeyJs, js); }
-    if (!wasm && model.wasmUrl) { wasm = (await fetchBytes(model.wasmUrl)).buffer; await cachePut(cacheKeyWasm, wasm); }
+    if (!wasm && model.wasmUrl) { wasm = (await fetchBytes(model.wasmUrl)).buffer as ArrayBuffer; await cachePut(cacheKeyWasm, wasm); }
 
     const wasmB64 = wasm ? btoa(String.fromCharCode(...new Uint8Array(wasm))) : '';
 

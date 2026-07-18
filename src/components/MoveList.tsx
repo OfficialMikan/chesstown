@@ -17,9 +17,7 @@ export function MoveList({ moves, moveInfos, currentPly, onSelect }: Props) {
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '38px 1fr 1fr', fontFamily: 'var(--mono)', fontSize: 13, borderBottom: '1px solid var(--line)' }}>
                 <div style={{ color: 'var(--text-dim)', padding: '7px 10px' }}>{w.moveNumber}.</div>
                 <Cell ply={i + 1} san={w.san} info={wInfo} active={currentPly === i + 1} onClick={onSelect} />
-                {b
-                    ? <Cell ply={i + 2} san={b.san} info={bInfo} active={currentPly === i + 2} onClick={onSelect} />
-                    : <div style={{ borderLeft: '1px solid var(--line)' }} />}
+                {b ? <Cell ply={i + 2} san={b.san} info={bInfo} active={currentPly === i + 2} onClick={onSelect} /> : <div style={{ borderLeft: '1px solid var(--line)' }} />}
             </div>
         );
     }
@@ -36,11 +34,8 @@ function Cell({ ply, san, info, active, onClick }: { ply: number; san: string; i
         <div
             onClick={() => onClick(ply)}
             style={{
-                padding: '7px 10px',
-                cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 6,
-                borderLeft: '1px solid var(--line)',
-                position: 'relative',
+                padding: '7px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                borderLeft: '1px solid var(--line)', position: 'relative',
                 background: active ? 'var(--active-cell)' : 'transparent',
             }}
         >

@@ -11,9 +11,7 @@ type Props = {
 };
 
 export function EngineSettingsModal({ modelId, onModelChange, onClose, models }: Props) {
-    const m = models.find(x => x.id === modelId) ?? models[0];
     const [selected, setSelected] = useState(modelId);
-
     const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' };
     const modalBox: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, width: 480, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' };
     const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid var(--line)' };
@@ -33,12 +31,10 @@ export function EngineSettingsModal({ modelId, onModelChange, onClose, models }:
                             {models.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
                         </select>
                         <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-dim)' }}>
-                            {m.id === 'cloud' && '☁️ Cloud Stockfish runs on Vercel servers, no download required. Works on any device including phones.'}
-                            {m.id !== 'cloud' && '⚠️ Local engines require a WebAssembly download and may fail on low-memory devices.'}
+                            {selected === 'cloud'
+                                ? '☁️ Cloud engine uses a serverless fallback chain (Lichess → chess-api.com → stockfish.online). No download, works on any device.'
+                                : '⚠️ Local engine downloads ~5MB of Stockfish WASM into your browser. May fail on low-memory devices.'}
                         </div>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-dim)', padding: 12, background: 'var(--bg)', borderRadius: 5 }}>
-                        <b>How it works:</b> Each position is sent to <code>/api/analyze</code> which calls a public Stockfish cloud endpoint and returns the eval + best move. Positions are cached on Vercel's edge for 24h.
                     </div>
                 </div>
             </div>

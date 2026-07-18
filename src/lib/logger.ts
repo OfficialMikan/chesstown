@@ -1,15 +1,5 @@
-// Lightweight logger that surfaces runtime errors in a dev panel and pipes
-// them to the in-app DebugDrawer. Hooks console.{log,warn,error} so existing
-// engine/state code just works.
-
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-export type LogEntry = {
-    ts: number;
-    level: LogLevel;
-    tag: string;
-    msg: string;
-    data?: any;
-};
+export type LogEntry = { ts: number; level: LogLevel; tag: string; msg: string; data?: any };
 
 type Listener = (entries: LogEntry[]) => void;
 
@@ -23,31 +13,22 @@ class Logger {
         const entry: LogEntry = { ts: Date.now(), level, tag, msg, data };
         this.entries.push(entry);
         if (this.entries.length > this.max) this.entries.shift();
-        // Mirror to console for devtools
         const c = console[level === 'debug' ? 'log' : level] || console.log;
         c(`[${tag}] ${msg}`, data ?? '');
         this.listeners.forEach(l => l(this.entries));
     }
-
     debug(tag: string, msg: string, data?: any) { this.log('debug', tag, msg, data); }
     info(tag: string, msg: string, data?: any) { this.log('info', tag, msg, data); }
     warn(tag: string, msg: string, data?: any) { this.log('warn', tag, msg, data); }
     error(tag: string, msg: string, data?: any) { this.log('error', tag, msg, data); }
-
     getEntries() { return this.entries; }
     clear() { this.entries = []; this.listeners.forEach(l => l(this.entries)); }
-    subscribe(l: Listener) { this.listeners.add(l); return () => this.listeners.delete(l); }
-
-    /** Install global error hooks. Call once on app start. */
+    subscribe(l: Listener) { this.listeners.add(l); return () => { this.listeners.delete(l); }; }
     installGlobalHandlers() {
         if (this.installed) return;
         this.installed = true;
-        window.addEventListener('error', (e) => {
-            this.error('window.error', e.message, { filename: e.filename, line: e.lineno, col: e.colno, stack: e.error?.stack });
-        });
-        window.addEventListener('unhandledrejection', (e) => {
-            this.error('unhandledrejection', String(e.reason), { reason: e.reason });
-        });
+        window.addEventListener('error', (e) => this.error('window.error', e.message, { stack: e.error?.stack }));
+        window.addEventListener('unhandledrejection', (e) => this.error('unhandledrejection', String(e.reason)));
     }
 }
 

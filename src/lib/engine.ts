@@ -1,11 +1,8 @@
-// Client-side engine client. Hits the Vercel serverless function at /api/analyze.
-// The serverless function calls a public cloud Stockfish API.
+// Thin client for the serverless /api/analyze endpoint. With deduplication so
+// we don't re-request the same FEN twice (FEN-based cache for the session).
 
-import type { PositionInfo } from '../lib/types';
+import type { PositionInfo } from './types';
 
-export type { PositionInfo } from './types';
-
-export type AnalyzeRequest = { fen: string; depth?: number; multiPv?: number };
 export type AnalyzeResponse = {
     fen: string;
     depth: number;
@@ -15,25 +12,47 @@ export type AnalyzeResponse = {
     mate: number | null;
     nps: number;
     timeMs: number;
+    source: string;
 };
 
 const FEN_TO_RESULT = new Map<string, Promise<AnalyzeResponse>>();
+const INFLIGHT = new Set<string>();
 
-export async function analyzeFen(fen: string, depth = 16): Promise<AnalyzeResponse> {
-    const cacheKey = `${depth}:${fen}`;
-    let p = FEN_TO_RESULT.get(cacheKey);
-    if (p) return p;
-    p = (async () => {
-        const r = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fen, depth }),
-        });
-        if (!r.ok) throw new Error('analyze failed: ' + r.status);
-        return r.json() as Promise<AnalyzeResponse>;
+export async function analyzeFen(fen: string, depth = 16): Promise<AnalyzeResponse | null> {
+    const key = `${depth}:${fen}`;
+    const cached = FEN_TO_RESULT.get(key);
+    if (cached) return cached;
+    if (INFLIGHT.has(key)) return null; // another call is already fetching this
+    INFLIGHT.add(key);
+    const p = (async () => {
+        try {
+            const r = await fetch('/api/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fen, depth }),
+            });
+            if (!r.ok) {
+                console.error('analyze HTTP', r.status, await r.text().catch(() => ''));
+                return null;
+            }
+            const j = (await r.json()) as AnalyzeResponse;
+            if (!j.bestMove) return null;
+            FEN_TO_RESULT.set(key, Promise.resolve(j));
+            return j;
+        } catch (e: any) {
+            console.error('analyze fetch failed', e);
+            return null;
+        } finally {
+            INFLIGHT.delete(key);
+        }
     })();
-    FEN_TO_RESULT.set(cacheKey, p);
+    FEN_TO_RESULT.set(key, p);
     return p;
+}
+
+export function clearAnalysisCache() {
+    FEN_TO_RESULT.clear();
+    INFLIGHT.clear();
 }
 
 export function analyzeAll(
@@ -51,11 +70,8 @@ export function analyzeAll(
             while (true) {
                 const i = next++;
                 if (i >= fens.length) return;
-                try {
-                    results[i] = await analyzeFen(fens[i], depth);
-                } catch {
-                    results[i] = null;
-                }
+                const r = await analyzeFen(fens[i], depth);
+                results[i] = r;
                 done++;
                 onProgress?.(done, fens.length);
             }

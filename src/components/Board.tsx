@@ -1,13 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { fenToBoard } from '../lib/chess';
-import type { PositionInfo } from '../lib/types';
+import { ReactNode } from 'react';
 
 type Props = {
     fen: string;
     lastMove?: { fromRow: number; fromCol: number; toRow: number; toCol: number } | null;
     flipped: boolean;
     width?: number;
-    children?: React.ReactNode; // arrow overlay
+    children?: ReactNode;
 };
 
 export function Board({ fen, lastMove, flipped, width = 360, children }: Props) {
@@ -16,7 +16,6 @@ export function Board({ fen, lastMove, flipped, width = 360, children }: Props) 
     const hlRefs = useRef<SVGRectElement[][]>([]);
     const pieceRefs = useRef<SVGUseElement[][]>([]);
 
-    // Build the 8×8 grid once.
     useEffect(() => {
         const svg = ref.current!;
         while (svg.firstChild) svg.removeChild(svg.firstChild);
@@ -59,7 +58,6 @@ export function Board({ fen, lastMove, flipped, width = 360, children }: Props) 
         }
     }, []);
 
-    // Update colors/highlights/pieces in place
     useEffect(() => {
         const board = fenToBoard(fen);
         const s = 360 / 8;
@@ -80,6 +78,7 @@ export function Board({ fen, lastMove, flipped, width = 360, children }: Props) 
                 if (piece) {
                     const isWhite = piece === piece.toUpperCase();
                     pn.setAttribute('href', `/pieces/cburnett/${isWhite ? 'w' : 'b'}${piece.toUpperCase()}.svg`);
+                    pn.setAttribute('color', isWhite ? '#ffffff' : '#1a1a1a');
                 } else {
                     pn.removeAttribute('href');
                 }
@@ -87,8 +86,9 @@ export function Board({ fen, lastMove, flipped, width = 360, children }: Props) 
         }
     }, [fen, lastMove, flipped]);
 
+    // Container uses flex so the eval bar + board sit on the same baseline
     return (
-        <div style={{ position: 'relative', width, maxWidth: '100%' }}>
+        <div style={{ position: 'relative', display: 'block', width }}>
             <svg
                 ref={ref}
                 viewBox="0 0 360 360"

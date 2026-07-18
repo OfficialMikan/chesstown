@@ -1,13 +1,13 @@
 {
     "functions": {
+        "api/analyze.ts": {
+            "maxDuration": 10
+        },
         "api/coach.ts": {
             "maxDuration": 25
+        },
+        "api/test-engine.ts": {
+            "maxDuration": 30
         }
-    },
-    "rewrites": [
-        {
-            "source": "/(.*)",
-            "destination": "/index.html"
-        }
-    ]
+    }
 }

@@ -1,10 +1,6 @@
 :root {
-    /* Chess.com palette */
-    --board-light: #eeeed2;
-    --board-dark: #769656;
-    --last-move: #baca44;
-    --active-cell: #312e2b;
-    --bg: #1a1a1a;
+    --ink: #1a1a1a;
+    --bg: #312e2b;
     --panel: #262421;
     --panel-2: #2d2a26;
     --panel-3: #3a3633;
@@ -13,13 +9,16 @@
     --text-dim: #9c9485;
     --accent: #81b64c;
     --accent-2: #baca44;
+    --board-light: #eeeed2;
+    --board-dark: #769656;
+    --last-move: #baca44;
+    --active-cell: #312e2b;
     --blunder: #e58a85;
     --mistake: #e8c170;
     --inaccuracy: #8fb8de;
     --good: #a3b18a;
     --brilliant: #1faced;
     --great: #96bc4b;
-
     --radius: 8px;
     --radius-sm: 5px;
     --sans: 'Inter', system-ui, sans-serif;
@@ -67,7 +66,7 @@ button:active:not(:disabled) {
 }
 
 button:disabled {
-    opacity: 0.4;
+    opacity: 0.45;
     cursor: default;
 }
 
@@ -78,14 +77,14 @@ button.ghost {
     font-weight: 500;
 }
 
-button.ghost:hover {
+button.ghost:hover:not(:disabled) {
     color: var(--text);
     border-color: var(--accent);
     background: var(--panel-2);
 }
 
 input[type=text] {
-    background: var(--bg);
+    background: var(--ink);
     border: 1px solid var(--line);
     color: var(--text);
     padding: 8px 12px;
@@ -115,4 +114,23 @@ input[type=text]:focus {
     letter-spacing: 0.15em;
     font-weight: 600;
     text-transform: uppercase;
+}
+
+.pm-game-row {
+    transition: background 0.1s, border-color 0.1s;
+}
+
+.pm-game-row:hover {
+    background: var(--panel-2);
+}
+
+.pm-game-row.pm-selected {
+    border-color: var(--accent) !important;
+    background: var(--panel-2);
+}
+
+@media (max-width: 1180px) {
+    #pm-root {
+        font-size: 13px;
+    }
 }

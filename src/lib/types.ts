@@ -28,12 +28,5 @@ export type MoveInfo = {
     isUserMove: boolean;
 };
 
-// Engine model ids — kept for the settings UI but no longer used for local loading.
-export type EngineModelId = 'cloud' | 'sf18_05' | 'sf16_00' | 'sf11_00';
-
-export type EngineModel = {
-    id: EngineModelId;
-    label: string;
-    format: 'cloud' | 'wasm' | 'asmjs';
-    maxDepth: number;
-};
+export type EngineModelId = 'cloud' | 'local';
+export type EngineModel = { id: EngineModelId; label: string; maxDepth: number };

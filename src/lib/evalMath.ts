@@ -4,5 +4,5 @@ export function cpToWinProbability(cp: number): number {
 
 export function winProbToBarPct(cp: number, cap = 1000): number {
     const c = Math.max(-cap, Math.min(cap, cp));
-    return 50 + (c / cap) * 50; // 0 = full black, 100 = full white
+    return 50 + (c / cap) * 50;
 }

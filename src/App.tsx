@@ -7,23 +7,28 @@ import { GameGraph } from './components/GameGraph';
 import { SummaryCards } from './components/SummaryCards';
 import { CoachPanel } from './components/CoachPanel';
 import { EngineSettingsModal } from './components/EngineSettingsModal';
-import { analyzeAll, toPositionInfo } from './lib/engine';
+import { OpeningName } from './components/OpeningName';
+import { FullscreenBoard } from './components/FullscreenBoard';
+import { HelpDialog } from './components/HelpDialog';
+import { DebugPanel } from './components/DebugPanel';
+import { ToastContainer, pushToast } from './components/Toast';
+import { analyzeAll, toPositionInfo, analyzeFen } from './lib/engine';
 import { buildMovesFromPgn, classify, formatEval, squareToRowCol, START_FEN, uciToSan } from './lib/chess';
 import { logger } from './lib/logger';
+import { detectOpening } from './lib/openings';
+import { buildSuggestions, detectThreats, Suggestion, Threat } from './lib/suggest';
 import type { EngineModelId, MoveInfo, PositionInfo } from './lib/types';
 
-type Game = {
-    headers: Record<string, string>;
-    moves: ReturnType<typeof buildMovesFromPgn>;
-    userIsWhite: boolean;
-};
-
-const ENGINE_MODELS: { id: EngineModelId; label: string; maxDepth: number }[] = [
-    { id: 'cloud', label: 'Cloud Stockfish (recommended)', maxDepth: 22 },
-    { id: 'sf18_05', label: 'Stockfish 18.0.5 (local, requires WASM)', maxDepth: 25 },
+const ENGINE_MODELS = [
+    { id: 'cloud' as EngineModelId, label: 'Cloud Stockfish (recommended)', maxDepth: 22 },
+    { id: 'local' as EngineModelId, label: 'Local Stockfish (downloads WASM)', maxDepth: 25 },
 ];
 
+type Game = { headers: Record<string, string>; moves: ReturnType<typeof buildMovesFromPgn>; userIsWhite: boolean };
+
 export function App() {
+    logger.installGlobalHandlers();
+
     const [username, setUsername] = useState('');
     const [games, setGames] = useState<any[]>([]);
     const [game, setGame] = useState<Game | null>(null);
@@ -35,13 +40,15 @@ export function App() {
     const [progress, setProgress] = useState(0);
     const [modelId, setModelId] = useState<EngineModelId>('cloud');
     const [showEngineModal, setShowEngineModal] = useState(false);
+    const [showFullscreen, setShowFullscreen] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
     const [depth, setDepth] = useState(16);
+    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+    const [threats, setThreats] = useState<Threat[]>([]);
     const analysisTokenRef = useRef(0);
 
-    // --- chess.com games ---
     const loadGames = async (u: string) => {
-        setStatus('Searching chess.com…');
-        setGames([]);
+        setStatus('Searching chess.com…'); setGames([]);
         try {
             const r = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(u.toLowerCase())}/games/archives`);
             if (!r.ok) throw new Error(r.status === 404 ? 'not-found' : 'http');
@@ -60,7 +67,6 @@ export function App() {
             setGames(collected.slice(0, 20));
             setStatus('');
         } catch (e: any) {
-            logger.error('loadGames', e.message);
             setStatus(e.message === 'not-found' ? "Couldn't find that username." : "Couldn't reach chess.com.");
         }
     };
@@ -69,17 +75,16 @@ export function App() {
         const uname = username.toLowerCase();
         const userIsWhite = g.white.username.toLowerCase() === uname;
         const userIsBlack = g.black.username.toLowerCase() === uname;
-        const userIsWhiteFinal = userIsWhite || !userIsBlack;
         try {
             const moves = buildMovesFromPgn(g.pgn);
-            setGame({ headers: { White: g.white.username, Black: g.black.username }, moves, userIsWhite: userIsWhiteFinal });
-            setFlipped(!userIsWhiteFinal);
+            setGame({ headers: { White: g.white.username, Black: g.black.username }, moves, userIsWhite: userIsWhite || !userIsBlack });
+            setFlipped(!userIsWhite);
             setCurrentPly(0);
             setPositions(new Array(moves.length + 1).fill(null));
             setMoveInfos(new Array(moves.length).fill(null));
+            setSuggestions([]); setThreats([]);
             setStatus('Game loaded. Click <b>Analyze</b>.');
         } catch (e: any) {
-            logger.error('selectGame', e.message);
             setStatus('PGN parse error: ' + e.message);
         }
     };
@@ -92,19 +97,18 @@ export function App() {
             setCurrentPly(0);
             setPositions(new Array(moves.length + 1).fill(null));
             setMoveInfos(new Array(moves.length).fill(null));
+            setSuggestions([]); setThreats([]);
             setStatus('PGN loaded. Click <b>Analyze</b>.');
         } catch (e: any) {
-            logger.error('pastePgn', e.message);
             setStatus('PGN parse error: ' + e.message);
         }
     };
 
-    // --- analysis (cloud engine) ---
     const runAnalysis = async () => {
-        const startMs = Date.now();
         if (!game) return;
         const token = ++analysisTokenRef.current;
-        setStatus('Analyzing in parallel on the cloud…');
+        const t0 = Date.now();
+        setStatus('Analyzing in parallel on the cloud engine…');
         setProgress(0);
         const fens = [game.moves.length ? game.moves[0].fenBefore : START_FEN, ...game.moves.map(m => m.fenAfter)];
         setPositions(new Array(fens.length).fill(null));
@@ -114,13 +118,8 @@ export function App() {
             const results = await analyzeAll(fens, depth, (done, total) => {
                 if (token === analysisTokenRef.current) setProgress(Math.round((done / total) * 100));
             });
-
             if (token !== analysisTokenRef.current) return;
-            if (!results || results.length === 0) {
-                setStatus('Analysis returned no results. Click 🔧 debug to see why.');
-                logger.error('analysis', 'no results returned', { fens: fens.length, depth });
-                return;
-            }
+            if (!results.length) { setStatus('Engine returned no results. Open the debug panel and run a diagnostic.'); return; }
 
             const infos: PositionInfo[] = results.map((r, i) => {
                 const pi = toPositionInfo(r, fens[i]);
@@ -131,32 +130,135 @@ export function App() {
 
             const mi: (MoveInfo | null)[] = new Array(game.moves.length).fill(null);
             for (let i = 1; i < infos.length; i++) {
-                const before = infos[i - 1];
-                const after = infos[i];
+                const before = infos[i - 1], after = infos[i];
                 const moveIdx = i - 1;
                 const mover = game.moves[moveIdx].color;
                 const loss = mover === 'w' ? Math.max(0, before.cpWhitePov - after.cpWhitePov) : Math.max(0, after.cpWhitePov - before.cpWhitePov);
-                mi[moveIdx] = {
-                    ply: moveIdx + 1,
-                    loss,
-                    classification: classify(loss, after.score?.type === 'mate'),
-                    bestSanBefore: before.bestSan,
-                    playedSan: game.moves[moveIdx].san,
-                    isUserMove: game.userIsWhite === (mover === 'w'),
-                };
+                mi[moveIdx] = { ply: moveIdx + 1, loss, classification: classify(loss, after.score?.type === 'mate'), bestSanBefore: before.bestSan, playedSan: game.moves[moveIdx].san, isUserMove: game.userIsWhite === (mover === 'w') };
             }
             setMoveInfos(mi);
-            setStatus(`Analysis complete — ${infos.length} positions evaluated.`);
+            setStatus(`Analysis complete — ${infos.length} positions in ${((Date.now() - t0) / 1000).toFixed(1)}s.`);
             setProgress(100);
-            logger.info('analysis', `done: ${infos.length} positions in ~${Date.now() - startMs}ms`, { depth });
+            pushToast('Analysis complete', 'success');
         } catch (e: any) {
-            logger.error('analysis', e.message, { stack: e.stack });
+            logger.error('analysis', e.message);
             setStatus('Analysis failed: ' + e.message);
         }
-
     };
 
-    // Keyboard navigation
+    // Compute current state
+    const curPos = positions[currentPly] ?? null;
+    const lastMove = useMemo(() => {
+        if (!game || currentPly === 0) return null;
+        const mv = game.moves[currentPly - 1];
+        if (!mv.from || !mv.to) return null;
+        const a = squareToRowCol(mv.from), b = squareToRowCol(mv.to);
+        return { fromRow: a.row, fromCol: a.col, toRow: b.row, toCol: b.col };
+    }, [game, currentPly]);
+
+    // Opening detection
+    const sanMoves = useMemo(() => game?.moves.map(m => m.san) ?? [], [game]);
+    const opening = useMemo(() => detectOpening(sanMoves), [sanMoves]);
+
+    // Refresh threats when ply changes
+    useEffect(() => {
+        if (!game || !curPos) { setThreats([]); return; }
+        const fen = curPos.fen;
+        try { setThreats(detectThreats(fen)); } catch { setThreats([]); }
+    }, [curPos, game]);
+
+    // Build alternative moves for the arrow layer
+    const alternativeMoves = useMemo(() => {
+        if (!curPos) return [];
+        return curPos.pv.slice(1, 4).map(uci => ({ uci }));
+    }, [curPos]);
+
+    // Coach helpers
+    const onAsk = (text: string) => {
+        // CoachPanel just collects the question, the actual streaming happens
+        // via direct fetch in main CoachPanel flow. For the new "Suggest" and
+        // "Threats" buttons we generate rich local responses.
+        const ply = currentPly;
+        const pos = curPos;
+
+        if (text.toLowerCase().includes('suggest')) {
+            if (!pos) { pushCoach('<i>Click <b>Analyze</b> first so I can see the engine output.</i>'); return; }
+            buildSuggestions(pos.fen, pos.cpWhitePov, analyzeFen, 4).then(s => {
+                setSuggestions(s.slice(0, 4));
+                const html = s.length === 0 ? '<i>No legal moves found.</i>'
+                    : '<b>Top moves for you:</b><br>' + s.slice(0, 4).map(x =>
+                        `<b>${x.san}</b> — eval ${(x.evalCp / 100).toFixed(2)}${x.deltaCp !== 0 ? ` (${x.deltaCp > 0 ? '+' : ''}${(x.deltaCp / 100).toFixed(2)} vs current)` : ''} — <span style="color:var(--text-dim)">${x.classification}</span>`
+                    ).join('<br>');
+                pushCoach(html);
+            });
+            return;
+        }
+        if (text.toLowerCase().includes('threat')) {
+            const t = threats;
+            const html = t.length === 0
+                ? '<i>No immediate threats detected on this position.</i>'
+                : `<b>Opponent threats:</b><br>` + t.map(x => `<b>${x.san}</b> — ${x.description}`).join('<br>');
+            pushCoach(html);
+            return;
+        }
+
+        // Default: send the question to /api/coach and stream into chat
+        const msgs = (window as any).__coachHistory || [];
+        (window as any).__coachHistory = [...msgs, { role: 'user', content: text }];
+        const context = {
+            ply, fen: pos?.fen, evalCp: pos?.cpWhitePov, bestMoveSan: pos?.bestSan, pv: pos?.pv,
+            lastMove: ply > 0 ? { san: game.moves[ply - 1]?.san, info: moveInfos[ply - 1] } : null,
+            userSide: game.userIsWhite ? 'white' : 'black',
+        };
+        fetch('/api/coach', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: text, context }) })
+            .then(async r => {
+                if (!r.ok || !r.body) throw new Error('Coach HTTP ' + r.status);
+                const reader = r.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '', acc = '';
+                pushCoach('<span style="opacity:.6">thinking…</span>');
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n'); buffer = lines.pop() ?? '';
+                    for (const line of lines) {
+                        if (!line.startsWith('data:')) continue;
+                        const payload = line.slice(5).trim();
+                        if (payload === '[DONE]') continue;
+                        try { const o = JSON.parse(payload); if (typeof o.content === 'string') acc += o.content; } catch { }
+                    }
+                    if (acc) updateLastCoach(formatMdLite(acc));
+                }
+                if (!acc) updateLastCoach('<i>Coach returned no content. Try again or check the debug panel.</i>');
+            })
+            .catch(err => {
+                logger.error('coach', err.message);
+                updateLastCoach(`<i>Coach error: ${err.message}</i>`);
+            });
+    };
+
+    // Helpers for the coach panel to push messages in
+    const pushCoach = (html: string) => {
+        (window as any).__setCoachMsg?.(html);
+    };
+    const updateLastCoach = (html: string) => {
+        (window as any).__updateLastCoach?.(html);
+    };
+
+    // Expose hooks to CoachPanel
+    useEffect(() => {
+        (window as any).__setCoachMsg = (html: string) => {
+            const ev = new CustomEvent('coach-append', { detail: html });
+            window.dispatchEvent(ev);
+        };
+        (window as any).__updateLastCoach = (html: string) => {
+            const ev = new CustomEvent('coach-replace-last', { detail: html });
+            window.dispatchEvent(ev);
+        };
+    }, []);
+
+    // Keyboard shortcuts
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (!game) return;
@@ -166,19 +268,11 @@ export function App() {
             if (e.key === 'ArrowRight') setCurrentPly(p => Math.min(game.moves.length, p + 1));
             if (e.key === 'ArrowUp') setCurrentPly(0);
             if (e.key === 'ArrowDown') setCurrentPly(game.moves.length);
+            if (e.key === '?' || (e.shiftKey && e.key === '/')) { e.preventDefault(); setShowHelp(s => !s); }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [game]);
-
-    const curPos = positions[currentPly] ?? null;
-    const lastMove = useMemo(() => {
-        if (!game || currentPly === 0) return null;
-        const mv = game.moves[currentPly - 1];
-        if (!mv.from || !mv.to) return null;
-        const a = squareToRowCol(mv.from), b = squareToRowCol(mv.to);
-        return { fromRow: a.row, fromCol: a.col, toRow: b.row, toCol: b.col };
-    }, [game, currentPly]);
 
     const detail = (() => {
         if (!game) return null;
@@ -202,11 +296,18 @@ export function App() {
 
     return (
         <div style={{ maxWidth: 1480, margin: '0 auto', padding: '24px 16px' }}>
-            <h1 style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 600, margin: 0, letterSpacing: '-.3px' }}>Chesstown</h1>
-            <p style={{ color: 'var(--text-dim)', maxWidth: 720, marginTop: 6 }}>
-                Free chess analyzer with cloud Stockfish (SF 18+) and an AI coach powered by Llama 3.3 70B. Pull a game from chess.com, paste a PGN, or analyze a FEN.
-            </p>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 }}>
+                <div>
+                    <h1 style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 600, margin: 0, letterSpacing: '-.3px' }}>Chesstown</h1>
+                    <p style={{ color: 'var(--text-dim)', maxWidth: 720, margin: '4px 0 0', fontSize: 13 }}>
+                        Free chess analyzer with cloud Stockfish (SF 18+) and an AI coach. Pull a game from chess.com or paste a PGN.
+                    </p>
+                </div>
+                <button onClick={() => setShowHelp(true)} className="ghost" style={{ fontSize: 12 }}>? Shortcuts</button>
+            </div>
 
+            {/* Setup card */}
             <div className="card" style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <div style={{ flex: '1 1 240px' }}>
@@ -235,9 +336,9 @@ export function App() {
                             else if (oppResult === 'win') { tag = 'loss'; txt = 'Loss'; }
                             const date = new Date(g.end_time * 1000).toLocaleDateString();
                             return (
-                                <div key={i} onClick={() => selectGame(g)} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 5, border: '1px solid transparent', cursor: 'pointer' }}>
+                                <div key={i} onClick={() => selectGame(g)} className="pm-game-row" style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 5, border: '1px solid transparent', cursor: 'pointer' }}>
                                     <span><b>vs {opp}</b> · {date} · {g.time_class}</span>
-                                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 8px', borderRadius: 3, border: `1px solid ${tag === 'win' ? 'var(--accent)' : tag === 'loss' ? 'var(--blunder)' : 'var(--line)'}`, color: tag === 'win' ? 'var(--accent)' : tag === 'loss' ? 'var(--blunder)' : 'var(--text-dim)' }}>{txt}</span>
+                                    <span className={`pm-tag pm-${tag}`} style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 8px', borderRadius: 3, border: `1px solid ${tag === 'win' ? 'var(--accent)' : tag === 'loss' ? 'var(--blunder)' : 'var(--line)'}`, color: tag === 'win' ? 'var(--accent)' : tag === 'loss' ? 'var(--blunder)' : 'var(--text-dim)' }}>{txt}</span>
                                 </div>
                             );
                         })}
@@ -245,6 +346,7 @@ export function App() {
                 )}
             </div>
 
+            {/* Analyze controls */}
             {game && (
                 <div className="card" style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -264,51 +366,67 @@ export function App() {
                             <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
                                 <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg, var(--accent), var(--accent-2))', transition: 'width .2s' }} />
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)', marginTop: 4 }}>{progress}% · cloud engine</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)', marginTop: 4 }}>{progress}%</div>
                         </div>
                     )}
                 </div>
             )}
 
+            {/* Workspace */}
             {game && (
                 <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'minmax(280px, 380px) 1fr minmax(320px, 420px)', gap: 16, alignItems: 'start' }}>
+                    {/* Board column */}
                     <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', width: '100%', maxWidth: 380 }}>
-                            <EvalBar pos={curPos} />
-                            <div style={{ flex: 1 }}>
-                                <Board fen={curPos?.fen ?? game.moves[0]?.fenBefore ?? START_FEN} lastMove={lastMove} flipped={flipped}>
+                        {opening && (
+                            <div style={{ width: '100%' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: 'var(--bg)', borderRadius: 4 }}>
+                                    <span className="eyebrow" style={{ color: 'var(--text-dim)' }}>{opening.eco}</span>
+                                    <span style={{ fontWeight: 600, fontSize: 13 }}>{opening.name}</span>
+                                </div>
+                            </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', width: '100%', maxWidth: 380, justifyContent: 'center' }}>
+                            <EvalBar pos={curPos} height={360} width={20} />
+                            <div style={{ flex: 1, position: 'relative' }}>
+                                <Board fen={curPos?.fen ?? game.moves[0]?.fenBefore ?? START_FEN} lastMove={lastMove} flipped={flipped} width={360}>
                                     <ArrowsLayer
                                         pv={curPos?.pv ?? []}
+                                        alternativeMoves={alternativeMoves}
                                         flipped={flipped}
                                         style="arrow"
-                                        color="#facc15"
+                                        pvColor="#facc15"
+                                        altColor="#94a3b8"
                                         pvGradient={{ from: '#FFFF00', to: '#FF0000' }}
                                         pvCustomGradient={false}
                                         arrowWidth={15}
-                                        arrowOpacity={0.85}
+                                        arrowOpacity={0.9}
                                         showNumbers={false}
                                         size={360}
+                                        bestUci={curPos?.bestMoveUci ?? null}
                                     />
                                 </Board>
                             </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                             <button className="ghost" onClick={() => setCurrentPly(0)}>« first</button>
                             <button className="ghost" onClick={() => setCurrentPly(p => Math.max(0, p - 1))}>← prev</button>
                             <button className="ghost" onClick={() => setFlipped(f => !f)}>flip</button>
                             <button className="ghost" onClick={() => setCurrentPly(p => Math.min(game.moves.length, p + 1))}>next →</button>
                             <button className="ghost" onClick={() => setCurrentPly(game.moves.length)}>last »</button>
+                            <button className="ghost" onClick={() => setShowFullscreen(true)} style={{ marginLeft: 4 }}>⛶ fullscreen</button>
                         </div>
                         <div style={{ minHeight: 80, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-dim)', width: '100%' }}>{detail}</div>
                     </div>
 
+                    {/* Moves + summary column */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <MoveList moves={game.moves} moveInfos={moveInfos} currentPly={currentPly} onSelect={setCurrentPly} />
                         <GameGraph positions={positions} currentPly={currentPly} onSelect={setCurrentPly} />
                         <SummaryCards moves={game.moves} moveInfos={moveInfos} userIsWhite={game.userIsWhite} onJump={setCurrentPly} />
                     </div>
 
-                    <CoachPanel
+                    {/* Coach column */}
+                    <CoachPanelWithBridge
                         currentPos={curPos}
                         currentPly={currentPly}
                         moves={game.moves}
@@ -316,10 +434,26 @@ export function App() {
                         moveInfos={moveInfos}
                         onJump={setCurrentPly}
                         userIsWhite={game.userIsWhite}
+                        onAsk={onAsk}
+                        onSuggest={() => onAsk('suggest')}
+                        onThreats={() => onAsk('threat')}
                     />
                 </div>
             )}
 
+            {/* Modals */}
+            <FullscreenBoard
+                open={showFullscreen}
+                onClose={() => setShowFullscreen(false)}
+                fen={curPos?.fen ?? game?.moves[0]?.fenBefore ?? START_FEN}
+                lastMove={lastMove}
+                flipped={flipped}
+                pos={curPos}
+                showPV={true}
+                showAlt={true}
+                onFlip={() => setFlipped(f => !f)}
+            />
+            <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
             {showEngineModal && (
                 <EngineSettingsModal
                     modelId={modelId}
@@ -328,8 +462,33 @@ export function App() {
                     models={ENGINE_MODELS}
                 />
             )}
+            <DebugPanel />
+            <ToastContainer />
         </div>
     );
+}
+
+// Wrapper that hooks into the global coach history setters
+import { useEffect as useEff2 } from 'react';
+function CoachPanelWithBridge(props: any) {
+    const [history, setHistory] = useState<{ role: string; html: string; pending?: boolean }[]>([
+        { role: 'coach', html: "<b>Hi, I'm your AI Coach.</b><br><br>Analyze a game, then ask me about any position." },
+    ]);
+    useEffect(() => {
+        const onAppend = (e: any) => {
+            setHistory(h => [...h, { role: 'coach', html: e.detail, pending: true }]);
+        };
+        const onReplace = (e: any) => {
+            setHistory(h => h.map((m, i) => i === h.length - 1 ? { ...m, html: e.detail, pending: false } : m));
+        };
+        window.addEventListener('coach-append', onAppend);
+        window.addEventListener('coach-replace-last', onReplace);
+        return () => {
+            window.removeEventListener('coach-append', onAppend);
+            window.removeEventListener('coach-replace-last', onReplace);
+        };
+    }, []);
+    return <CoachPanel {...props} _history={history} _setHistory={setHistory} />;
 }
 
 function PgnPaste({ onPaste }: { onPaste: (pgn: string) => void }) {
@@ -340,4 +499,10 @@ function PgnPaste({ onPaste }: { onPaste: (pgn: string) => void }) {
             <button className="ghost" onClick={() => { if (val.trim()) { onPaste(val); setVal(''); } }}>Load PGN</button>
         </div>
     );
+}
+
+function formatMdLite(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+        .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<i>$1</i>');
 }

@@ -1,10 +1,6 @@
-// Chess utilities. Re-exports PGN parsing from pgn.ts (canonical home),
-// and adds board/eval helpers used across the app.
-
 import { Chess } from 'chess.js';
-import type { Classification } from '../lib/types';
+import type { Classification } from './types';
 
-// Re-export the PGN stuff so existing imports `from './chess'` still work.
 export { buildMovesFromPgn, parsePgnHeaders, parsePgn, extractSanSequence, STANDARD_STARTING } from './pgn';
 export type { ParsedMove, ParsedPgn } from './pgn';
 
@@ -24,7 +20,7 @@ export function createChess(fen?: string): Chess {
 
 export function fenToBoard(fen: string): (string | null)[][] {
     const rows = fen.split(' ')[0].split('/');
-    return rows.map((row) => {
+    return rows.map(row => {
         const r: (string | null)[] = [];
         for (const c of row) {
             if (/\d/.test(c)) {
@@ -61,7 +57,6 @@ export function uciToSan(fen: string, uci: string): string | null {
     }
 }
 
-/** 7-tier classification following wintrchess/Chess.com conventions. */
 export function classify(loss: number, isMate: boolean): Classification {
     if (isMate) return { label: 'Forced Mate', symbol: '', tier: 'best', color: 'var(--brilliant)' };
     if (loss <= 5) return { label: 'Best', symbol: '', tier: 'best', color: 'var(--accent-2)' };

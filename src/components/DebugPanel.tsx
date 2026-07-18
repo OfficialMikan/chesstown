@@ -57,7 +57,7 @@ export function DebugPanel() {
                     boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
                 }}
             >
-                🔧 debug
+                <span style={{ fontFamily: 'var(--mono)', letterSpacing: '0.06em' }}>DEBUG</span>
                 {errors > 0 && <span style={{ background: '#fff', color: 'var(--blunder)', borderRadius: 10, padding: '0 6px', fontSize: 10 }}>{errors}</span>}
                 {warns > 0 && <span style={{ background: 'var(--mistake)', color: '#000', borderRadius: 10, padding: '0 6px', fontSize: 10 }}>{warns}</span>}
             </button>
@@ -76,7 +76,7 @@ export function DebugPanel() {
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                             <button onClick={runDiagnostic} disabled={running} className="ghost" style={{ fontSize: 10, padding: '3px 8px' }}>
-                                {running ? '⏳ running…' : '🩺 Run diagnostic'}
+                                {running ? 'Running…' : 'Run diagnostic'}
                             </button>
                             <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(filtered, null, 2)); }} className="ghost" style={{ fontSize: 10, padding: '3px 8px' }}>Copy</button>
                             <button onClick={() => logger.clear()} className="ghost" style={{ fontSize: 10, padding: '3px 8px' }}>Clear</button>

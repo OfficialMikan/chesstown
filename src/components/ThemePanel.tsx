@@ -19,12 +19,12 @@ export type Theme = {
 export const DEFAULT_THEME: Theme = {
     boardLight: '#eeeed2',
     boardDark: '#769656',
-    highlight: '#facc15',
+    highlight: '#96bc4b',
     lastMove: '#baca44',
-    activeCell: '#312e2b',
-    arrow: '#facc15',
-    pvStart: '#FFFF00',
-    pvEnd: '#FF0000',
+    activeCell: '#3b3a30',
+    arrow: '#96bc4b',
+    pvStart: '#96bc4b',
+    pvEnd: '#5c8bb0',
     arrowStyle: 'arrow',
     pvCustomGradient: false,
     showPVNumbers: false,
@@ -35,7 +35,7 @@ export const DEFAULT_THEME: Theme = {
 export const PRESETS: Record<string, Partial<Theme>> = {
     ChessCom: {
         boardLight: '#eeeed2', boardDark: '#769656',
-        highlight: '#facc15', lastMove: '#baca44', activeCell: '#312e2b',
+        highlight: '#96bc4b', lastMove: '#baca44', activeCell: '#3b3a30',
     },
     Lichess: {
         boardLight: '#f0d9b5', boardDark: '#b58863',

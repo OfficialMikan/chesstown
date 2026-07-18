@@ -191,7 +191,7 @@ export function App() {
             <div>
                 <div style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 600 }}>
                     {mv.moveNumber}{mv.color === 'w' ? '.' : '…'} {mv.san}
-                    {mi && mi.classification.symbol && <span style={{ color: mi.classification.color, marginLeft: 6 }}>{mi.classification.symbol}</span>}
+                    {mi && mi.classification.symbol && <span className="tier-badge" style={{ background: mi.classification.color, color: '#fff', marginLeft: 6 }}>{mi.classification.symbol}</span>}
                 </div>
                 {curPos && <div style={{ color: 'var(--accent)', fontFamily: 'var(--mono)' }}>eval: {formatEval(curPos)}</div>}
                 {mi && <div style={{ color: 'var(--text-dim)' }}>{mi.classification.label}{mi.loss > 10 ? ` (−${Math.round(mi.loss)}cp)` : ''}</div>}
@@ -205,11 +205,22 @@ export function App() {
     return (
         <div style={{ maxWidth: 1480, margin: '0 auto', padding: '24px 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 }}>
-                <div>
-                    <h1 style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 600, margin: 0, letterSpacing: '-.3px' }}>Chesstown</h1>
-                    <p style={{ color: 'var(--text-dim)', maxWidth: 720, margin: '4px 0 0', fontSize: 13 }}>
-                        Free chess analyzer with cloud Stockfish (SF 18+) and an AI coach. Pull a game from chess.com or paste a PGN.
-                    </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                        width: 30, height: 30, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
+                        display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr',
+                    }} aria-hidden="true">
+                        <div style={{ background: 'var(--board-dark)' }} />
+                        <div style={{ background: 'var(--board-light)' }} />
+                        <div style={{ background: 'var(--board-light)' }} />
+                        <div style={{ background: 'var(--board-dark)' }} />
+                    </div>
+                    <div>
+                        <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: '-.3px' }}>Chesstown</h1>
+                        <p style={{ color: 'var(--text-dim)', maxWidth: 720, margin: '2px 0 0', fontSize: 13 }}>
+                            Free chess analyzer with cloud Stockfish (SF 18+) and an AI coach. Pull a game from chess.com or paste a PGN.
+                        </p>
+                    </div>
                 </div>
                 <button onClick={() => setShowHelp(true)} className="ghost" style={{ fontSize: 12 }}>? Shortcuts</button>
             </div>
@@ -259,7 +270,7 @@ export function App() {
                             <div className="eyebrow" style={{ marginBottom: 6 }}>ENGINE DEPTH</div>
                             <div style={{ display: 'inline-flex', gap: 4, padding: 3, background: 'var(--ink)', borderRadius: 6, border: '1px solid var(--line)' }}>
                                 {[12, 16, 20].map(d => (
-                                    <button key={d} onClick={() => setDepth(d)} style={{ background: depth === d ? 'var(--accent)' : 'transparent', color: depth === d ? '#0c0c0c' : 'var(--text-dim)', border: 'none', fontWeight: depth === d ? 600 : 500, padding: '6px 14px', borderRadius: 4 }}>{d === 12 ? 'Fast' : d === 16 ? 'Balanced' : 'Deep'}</button>
+                                    <button key={d} onClick={() => setDepth(d)} style={{ background: depth === d ? 'var(--accent)' : 'transparent', color: depth === d ? '#ffffff' : 'var(--text-dim)', border: 'none', fontWeight: depth === d ? 600 : 500, padding: '6px 14px', borderRadius: 4 }}>{d === 12 ? 'Fast' : d === 16 ? 'Balanced' : 'Deep'}</button>
                                 ))}
                             </div>
                         </div>
@@ -290,9 +301,9 @@ export function App() {
                                         alternativeMoves={alternativeMoves}
                                         flipped={flipped}
                                         style="arrow"
-                                        pvColor="#facc15"
-                                        altColor="#94a3b8"
-                                        pvGradient={{ from: '#FFFF00', to: '#FF0000' }}
+                                        pvColor="#96bc4b"
+                                        altColor="#6f6a62"
+                                        pvGradient={{ from: '#96bc4b', to: '#5c8bb0' }}
                                         pvCustomGradient={false}
                                         arrowWidth={15}
                                         arrowOpacity={0.9}

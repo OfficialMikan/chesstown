@@ -42,7 +42,7 @@ export function DebugDrawer() {
                     boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
                 }}
             >
-                <span>🔧 debug</span>
+                <span style={{ fontFamily: 'var(--mono)', letterSpacing: '0.06em' }}>DEBUG</span>
                 {errors > 0 && <span style={{ background: '#fff', color: 'var(--blunder)', borderRadius: 10, padding: '0 6px', fontSize: 10 }}>{errors}</span>}
                 {warns > 0 && <span style={{ background: 'var(--mistake)', color: '#000', borderRadius: 10, padding: '0 6px', fontSize: 10 }}>{warns}</span>}
             </button>

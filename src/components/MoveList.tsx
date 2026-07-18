@@ -40,8 +40,12 @@ function Cell({ ply, san, info, active, onClick }: { ply: number; san: string; i
             }}
         >
             {active && <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: 'var(--last-move)' }} />}
-            <span style={{ color: info?.classification.color }}>{san}</span>
-            {info?.classification.symbol && <span style={{ color: info.classification.color, fontWeight: 700, fontSize: 12 }}>{info.classification.symbol}</span>}
+            <span>{san}</span>
+            {info?.classification.symbol && (
+                <span className="tier-badge" style={{ background: info.classification.color, color: '#fff' }} title={info.classification.label}>
+                    {info.classification.symbol}
+                </span>
+            )}
         </div>
     );
 }

@@ -124,7 +124,7 @@ export function CoachPanel(props: Props) {
                     <div key={i} className="card" style={{
                         padding: '10px 13px',
                         background: m.role === 'user' ? 'var(--accent)' : 'var(--panel-2)',
-                        color: m.role === 'user' ? '#0c0c0c' : 'var(--text)',
+                        color: m.role === 'user' ? '#ffffff' : 'var(--text)',
                         border: m.role === 'user' ? 'none' : '1px solid var(--line)',
                         alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
                         maxWidth: '92%', fontSize: 13, lineHeight: 1.55, borderRadius: 10,
@@ -137,8 +137,8 @@ export function CoachPanel(props: Props) {
             <div style={{ padding: '10px 14px', display: 'flex', gap: 6, flexWrap: 'wrap', borderTop: '1px solid var(--line)' }}>
                 <button className="ghost" onClick={() => ask('Explain this position and what the engine wants me to play.')} style={{ fontSize: 11, padding: '6px 12px', borderRadius: 14 }}>Ask about this position</button>
                 <button className="ghost" onClick={() => ask('What was my biggest mistake in this game?')} style={{ fontSize: 11, padding: '6px 12px', borderRadius: 14 }}>Biggest mistake</button>
-                <button className="ghost" onClick={suggest} style={{ fontSize: 11, padding: '6px 12px', borderRadius: 14 }}>💡 Suggest moves</button>
-                <button className="ghost" onClick={showThreats} style={{ fontSize: 11, padding: '6px 12px', borderRadius: 14 }}>⚠️ Threats</button>
+                <button className="ghost" onClick={suggest} style={{ fontSize: 11, padding: '6px 12px', borderRadius: 14 }}>Suggest moves</button>
+                <button className="ghost" onClick={showThreats} style={{ fontSize: 11, padding: '6px 12px', borderRadius: 14 }}>Threats</button>
             </div>
             <div style={{ padding: '12px 14px', display: 'flex', gap: 6, borderTop: '1px solid var(--line)' }}>
                 <input
@@ -149,7 +149,7 @@ export function CoachPanel(props: Props) {
                     disabled={streaming}
                     style={{ flex: 1, minWidth: 0 }}
                 />
-                <button onClick={() => { ask(input); setInput(''); }} disabled={streaming} style={{ background: 'var(--accent)', color: '#0c0c0c', fontWeight: 600, fontSize: 12, padding: '9px 16px' }}>Send</button>
+                <button onClick={() => { ask(input); setInput(''); }} disabled={streaming} style={{ background: 'var(--accent)', color: '#ffffff', fontWeight: 600, fontSize: 12, padding: '9px 16px' }}>Send</button>
             </div>
         </div>
     );

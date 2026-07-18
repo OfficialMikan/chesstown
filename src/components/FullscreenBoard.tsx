@@ -44,9 +44,9 @@ export function FullscreenBoard({ open, onClose, fen, lastMove, flipped, pos, on
                         pv={pos?.pv ?? []}
                         flipped={flipped}
                         style="arrow"
-                        pvColor="#facc15"
-                        altColor="#94a3b8"
-                        pvGradient={{ from: '#FFFF00', to: '#FF0000' }}
+                        pvColor="#96bc4b"
+                        altColor="#6f6a62"
+                        pvGradient={{ from: '#96bc4b', to: '#5c8bb0' }}
                         pvCustomGradient={false}
                         arrowWidth={20}
                         arrowOpacity={0.9}
@@ -60,7 +60,7 @@ export function FullscreenBoard({ open, onClose, fen, lastMove, flipped, pos, on
                     className="ghost"
                     style={{ position: 'absolute', top: -40, right: 0, fontSize: 14, padding: '6px 14px' }}
                 >
-                    ✕ Close (Esc)
+                    × Close (Esc)
                 </button>
                 <div style={{ position: 'absolute', top: -40, left: 0, color: 'var(--text-dim)', fontSize: 12, fontFamily: 'var(--mono)' }}>
                     Press F to flip · Esc to close

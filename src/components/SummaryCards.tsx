@@ -38,8 +38,13 @@ export function SummaryCards({ moves, moveInfos, userIsWhite, onJump }: { moves:
                     <h3 style={{ fontSize: 14, margin: '14px 0 0' }}>Biggest turning points</h3>
                     <ul style={{ listStyle: 'none', margin: 0, padding: 0, fontSize: 13 }}>
                         {worst.slice(0, 5).map(w => (
-                            <li key={w.idx} onClick={() => onJump(w.idx + 1)} style={{ padding: '8px 10px', borderTop: '1px solid var(--line)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
-                                <span><span style={{ color: 'var(--text-dim)' }}>{w.moveNumber}{w.side === 'w' ? '.' : '…'}</span> <span style={{ fontFamily: 'var(--mono)', color: w.side, fontWeight: 600 }}>{w.san}</span> <span style={{ color: w.color }}>{w.symbol}</span> <span style={{ color: 'var(--text-dim)' }}>— {w.label}</span></span>
+                            <li key={w.idx} onClick={() => onJump(w.idx + 1)} style={{ padding: '8px 10px', borderTop: '1px solid var(--line)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ color: 'var(--text-dim)' }}>{w.moveNumber}{w.side === 'w' ? '.' : '…'}</span>
+                                    <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{w.san}</span>
+                                    {w.symbol && <span className="tier-badge" style={{ background: w.color, color: '#fff' }}>{w.symbol}</span>}
+                                    <span style={{ color: 'var(--text-dim)' }}>{w.label}</span>
+                                </span>
                                 <span style={{ color: 'var(--blunder)', fontFamily: 'var(--mono)', fontSize: 12 }}>−{Math.round(w.loss)}cp</span>
                             </li>
                         ))}

@@ -32,8 +32,8 @@ export function EngineSettingsModal({ modelId, onModelChange, onClose, models }:
                         </select>
                         <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-dim)' }}>
                             {selected === 'cloud'
-                                ? '☁️ Cloud engine uses a serverless fallback chain (Lichess → chess-api.com → stockfish.online). No download, works on any device.'
-                                : '⚠️ Local engine downloads ~5MB of Stockfish WASM into your browser. May fail on low-memory devices.'}
+                                ? 'Cloud engine uses a serverless fallback chain (Lichess → chess-api.com → stockfish.online). No download, works on any device.'
+                                : 'Local engine downloads ~5MB of Stockfish WASM into your browser. May fail on low-memory devices.'}
                         </div>
                     </div>
                 </div>

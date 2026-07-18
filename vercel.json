@@ -1,0 +1,13 @@
+{
+    "functions": {
+        "api/coach.ts": {
+            "maxDuration": 25
+        }
+    },
+    "rewrites": [
+        {
+            "source": "/(.*)",
+            "destination": "/index.html"
+        }
+    ]
+}

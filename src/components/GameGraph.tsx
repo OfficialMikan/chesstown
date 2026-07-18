@@ -1,4 +1,4 @@
-import type { PositionInfo } from '../engine/types';
+import type { PositionInfo } from '../lib/types';
 
 export function GameGraph({ positions, currentPly, onSelect }: { positions: (PositionInfo | null)[]; currentPly: number; onSelect: (p: number) => void }) {
     const valid = positions.filter((p): p is PositionInfo => !!p);

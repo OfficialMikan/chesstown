@@ -2,7 +2,7 @@
 // and adds board/eval helpers used across the app.
 
 import { Chess } from 'chess.js';
-import type { Classification } from '../engine/types';
+import type { Classification } from '../lib/types';
 
 // Re-export the PGN stuff so existing imports `from './chess'` still work.
 export { buildMovesFromPgn, parsePgnHeaders, parsePgn, extractSanSequence, STANDARD_STARTING } from './pgn';

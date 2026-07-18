@@ -1,94 +1,47 @@
 import { useState } from 'react';
-import { LOCAL_ENGINES, getEngineById } from '../engine/localEngines';
-import type { EngineModelId } from '../engine/types';
+import type { EngineModelId } from '../lib/types';
+
+type Model = { id: EngineModelId; label: string; maxDepth: number };
 
 type Props = {
     modelId: EngineModelId;
     onModelChange: (id: EngineModelId) => void;
-    onOptionsChange: (opts: { hashMB: number; skillLevel: number; elo: number; limitStrength: boolean }) => void;
-    onReinstall: () => void;
-    onUninstall: () => void;
-    engineStatus: 'not_installed' | 'loading' | 'ready' | 'error';
-    engineStatusMsg: string;
     onClose: () => void;
-    onLoad: () => void;
+    models: Model[];
 };
 
-export function EngineSettingsModal({ modelId, onModelChange, onOptionsChange, onReinstall, onUninstall, engineStatus, engineStatusMsg, onClose, onLoad }: Props) {
-    const m = getEngineById(modelId);
-    const [opts, setOpts] = useState({ ...m.defaults, hashMB: m.defaults.hashMB, skillLevel: m.defaults.skillLevel ?? 20, elo: m.defaults.elo ?? 3190, limitStrength: m.defaults.limitStrength ?? false });
-    const apply = (next: typeof opts) => { setOpts(next); onOptionsChange(next); };
+export function EngineSettingsModal({ modelId, onModelChange, onClose, models }: Props) {
+    const m = models.find(x => x.id === modelId) ?? models[0];
+    const [selected, setSelected] = useState(modelId);
+
+    const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' };
+    const modalBox: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, width: 480, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' };
+    const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid var(--line)' };
+    const fullSelect: React.CSSProperties = { width: '100%', padding: '8px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--line)', borderRadius: 5 };
+
     return (
-        <div style={overlay}>
-            <div style={modalBox}>
+        <div style={overlay} onClick={onClose}>
+            <div onClick={e => e.stopPropagation()} style={modalBox}>
                 <div style={header}>
-                    <h3 style={{ margin: 0, fontSize: 14, color: 'var(--accent)', letterSpacing: '.04em' }}>LOCAL ENGINE SETTINGS</h3>
+                    <h3 style={{ margin: 0, fontSize: 14, color: 'var(--accent)', letterSpacing: '.04em' }}>ENGINE SETTINGS</h3>
                     <button onClick={onClose} className="ghost" style={{ padding: 0, width: 26, height: 26 }}>×</button>
                 </div>
-                <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div>
-                        <div className="eyebrow" style={{ marginBottom: 6 }}>ENGINE MODEL</div>
-                        <select value={modelId} onChange={e => onModelChange(e.target.value as EngineModelId)} style={fullSelect}>
-                            {LOCAL_ENGINES.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
+                        <div className="eyebrow" style={{ marginBottom: 6 }}>ENGINE</div>
+                        <select value={selected} onChange={e => { setSelected(e.target.value as EngineModelId); onModelChange(e.target.value as EngineModelId); }} style={fullSelect}>
+                            {models.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
                         </select>
-                        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)' }}>
-                            Format: {m.format === 'asmjs' ? 'asm.js' : 'WASM'} · Max depth: {m.maxDepth}
+                        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-dim)' }}>
+                            {m.id === 'cloud' && '☁️ Cloud Stockfish runs on Vercel servers, no download required. Works on any device including phones.'}
+                            {m.id !== 'cloud' && '⚠️ Local engines require a WebAssembly download and may fail on low-memory devices.'}
                         </div>
                     </div>
-
-                    <div>
-                        <div className="eyebrow" style={{ marginBottom: 6 }}>STATUS</div>
-                        <div style={{ fontWeight: 700, color: statusColor(engineStatus) }}>{statusLabel(engineStatus)}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-dim)', minHeight: 16 }}>{engineStatusMsg}</div>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                            <button onClick={onLoad} disabled={engineStatus === 'ready' || engineStatus === 'loading'} style={{ background: '#27ae60', color: '#fff' }}>Install / Load</button>
-                            <button onClick={onReinstall} style={{ background: '#2980b9', color: '#fff' }}>Reinstall</button>
-                            <button onClick={onUninstall} style={{ background: '#c0392b', color: '#fff' }}>Uninstall</button>
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="eyebrow" style={{ marginBottom: 6 }}>ENGINE OPTIONS</div>
-                        <Row label="Hash (MB)">
-                            <input type="number" min={1} max={2048} value={opts.hashMB} onChange={e => apply({ ...opts, hashMB: +e.target.value || 16 })} style={numInput} />
-                        </Row>
-                        {m.caps.hasSkillLevel && (
-                            <Row label="Skill Level (0–20)">
-                                <input type="range" min={0} max={20} value={opts.skillLevel} onChange={e => apply({ ...opts, skillLevel: +e.target.value })} style={{ flex: 1 }} />
-                                <input type="number" min={0} max={20} value={opts.skillLevel} onChange={e => apply({ ...opts, skillLevel: +e.target.value || 20 })} style={numInput} />
-                            </Row>
-                        )}
-                        {m.caps.hasNNUE && (
-                            <>
-                                <Row label="Limit to Elo">
-                                    <input type="checkbox" checked={opts.limitStrength} onChange={e => apply({ ...opts, limitStrength: e.target.checked })} />
-                                </Row>
-                                {opts.limitStrength && (
-                                    <Row label="Target Elo (1320–3190)">
-                                        <input type="number" min={1320} max={3190} value={opts.elo} onChange={e => apply({ ...opts, elo: +e.target.value || 3190 })} style={numInput} />
-                                    </Row>
-                                )}
-                            </>
-                        )}
+                    <div style={{ fontSize: 12, color: 'var(--text-dim)', padding: 12, background: 'var(--bg)', borderRadius: 5 }}>
+                        <b>How it works:</b> Each position is sent to <code>/api/analyze</code> which calls a public Stockfish cloud endpoint and returns the eval + best move. Positions are cached on Vercel's edge for 24h.
                     </div>
                 </div>
             </div>
         </div>
     );
 }
-
-const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
-        <label style={{ fontSize: 13, fontWeight: 600 }}>{label}</label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end' }}>{children}</div>
-    </div>
-);
-
-const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' };
-const modalBox: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, width: 480, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' };
-const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid var(--line)' };
-const fullSelect: React.CSSProperties = { width: '100%', padding: '8px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--line)', borderRadius: 5 };
-const numInput: React.CSSProperties = { width: 70, padding: '4px 6px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--line)', borderRadius: 4, textAlign: 'center' };
-
-function statusColor(s: string) { return s === 'ready' ? 'var(--accent)' : s === 'loading' ? '#ffaa00' : s === 'error' ? 'var(--blunder)' : 'var(--blunder)'; }
-function statusLabel(s: string) { return ({ ready: '✅ Ready', loading: '⏳ Loading…', not_installed: '❌ Not Installed', error: '⚠️ Error' } as any)[s] ?? s; }

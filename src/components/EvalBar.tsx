@@ -1,5 +1,5 @@
 import { winProbToBarPct } from '../lib/evalMath';
-import type { PositionInfo } from '../engine/types';
+import type { PositionInfo } from '../lib/types';
 
 export function EvalBar({ pos, height = 360, width = 22 }: { pos: PositionInfo | null; height?: number; width?: number }) {
     const cp = pos?.cpWhitePov ?? 0;

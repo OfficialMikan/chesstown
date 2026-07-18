@@ -7,17 +7,21 @@ import { GameGraph } from './components/GameGraph';
 import { SummaryCards } from './components/SummaryCards';
 import { CoachPanel } from './components/CoachPanel';
 import { EngineSettingsModal } from './components/EngineSettingsModal';
-import { WorkerPool } from './engine/workerPool';
-import { getEngineById } from './engine/localEngines';
-import { cacheDelete, cacheGet, cachePut } from './engine/cache';
+import { analyzeAll, toPositionInfo } from './lib/engine';
 import { buildMovesFromPgn, classify, formatEval, squareToRowCol, START_FEN, uciToSan } from './lib/chess';
-import type { EngineModelId, MoveInfo, PositionInfo } from './engine/types';
+import { logger } from './lib/logger';
+import type { EngineModelId, MoveInfo, PositionInfo } from './lib/types';
 
 type Game = {
     headers: Record<string, string>;
     moves: ReturnType<typeof buildMovesFromPgn>;
     userIsWhite: boolean;
 };
+
+const ENGINE_MODELS: { id: EngineModelId; label: string; maxDepth: number }[] = [
+    { id: 'cloud', label: 'Cloud Stockfish (recommended)', maxDepth: 22 },
+    { id: 'sf18_05', label: 'Stockfish 18.0.5 (local, requires WASM)', maxDepth: 25 },
+];
 
 export function App() {
     const [username, setUsername] = useState('');
@@ -29,47 +33,26 @@ export function App() {
     const [flipped, setFlipped] = useState(false);
     const [status, setStatus] = useState('');
     const [progress, setProgress] = useState(0);
-    const [modelId, setModelId] = useState<EngineModelId>('sf18_05');
-    const [engineStatus, setEngineStatus] = useState<'not_installed' | 'loading' | 'ready' | 'error'>('not_installed');
-    const [engineStatusMsg, setEngineStatusMsg] = useState('');
+    const [modelId, setModelId] = useState<EngineModelId>('cloud');
     const [showEngineModal, setShowEngineModal] = useState(false);
-    const [depth, setDepth] = useState(18);
-    const [threadCount] = useState(() => Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 1 || 1)));
-    const poolRef = useRef<WorkerPool | null>(null);
+    const [depth, setDepth] = useState(16);
     const analysisTokenRef = useRef(0);
 
-    const concurrency = threadCount;
-
-    // Engine model settings
-    const [modelOpts, setModelOpts] = useState(() => ({ ...getEngineById('sf18_05').defaults, hashMB: 64, skillLevel: 20, elo: 3190, limitStrength: false } as any));
-
-    const ensurePool = async (id: EngineModelId) => {
-        if (poolRef.current) poolRef.current.terminate();
-        setEngineStatus('loading');
-        setEngineStatusMsg(`Spinning up ${concurrency} Stockfish thread${concurrency === 1 ? '' : 's'}…`);
-        const p = new WorkerPool(id, concurrency, (slotIdx, uci) => {
-            // No-op here; we read best moves out of analyze() resolutions
-        });
-        poolRef.current = p;
-        try { await p.waitReady(); setEngineStatus('ready'); setEngineStatusMsg(`${getEngineById(id).label} ready`); }
-        catch (e: any) { setEngineStatus('error'); setEngineStatusMsg(e.message); }
-    };
-
-    // Load username's games
+    // --- chess.com games ---
     const loadGames = async (u: string) => {
         setStatus('Searching chess.com…');
         setGames([]);
         try {
-            const archivesRes = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(u.toLowerCase())}/games/archives`);
-            if (!archivesRes.ok) throw new Error(archivesRes.status === 404 ? 'not-found' : 'http');
-            const { archives } = await archivesRes.json();
+            const r = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(u.toLowerCase())}/games/archives`);
+            if (!r.ok) throw new Error(r.status === 404 ? 'not-found' : 'http');
+            const { archives } = await r.json();
             if (!archives?.length) { setStatus('No archives found.'); return; }
             const recent = archives.slice(-6).reverse();
             const collected: any[] = [];
             for (const url of recent) {
-                const r = await fetch(url);
-                if (!r.ok) continue;
-                const data = await r.json();
+                const rr = await fetch(url);
+                if (!rr.ok) continue;
+                const data = await rr.json();
                 collected.push(...(data.games || []).filter((g: any) => g.rules === 'chess'));
                 if (collected.length >= 20) break;
             }
@@ -77,6 +60,7 @@ export function App() {
             setGames(collected.slice(0, 20));
             setStatus('');
         } catch (e: any) {
+            logger.error('loadGames', e.message);
             setStatus(e.message === 'not-found' ? "Couldn't find that username." : "Couldn't reach chess.com.");
         }
     };
@@ -86,17 +70,21 @@ export function App() {
         const userIsWhite = g.white.username.toLowerCase() === uname;
         const userIsBlack = g.black.username.toLowerCase() === uname;
         const userIsWhiteFinal = userIsWhite || !userIsBlack;
-        const moves = buildMovesFromPgn(g.pgn);
-        setGame({ headers: { White: g.white.username, Black: g.black.username, Result: g.white.result === 'win' ? '1-0' : g.black.result === 'win' ? '0-1' : '1/2-1/2' }, moves, userIsWhite: userIsWhiteFinal });
-        setFlipped(!userIsWhiteFinal);
-        setCurrentPly(0);
-        setPositions(new Array(moves.length + 1).fill(null));
-        setMoveInfos(new Array(moves.length).fill(null));
-        setStatus('Game loaded. Click <b>Analyze</b> to run the engine.');
+        try {
+            const moves = buildMovesFromPgn(g.pgn);
+            setGame({ headers: { White: g.white.username, Black: g.black.username }, moves, userIsWhite: userIsWhiteFinal });
+            setFlipped(!userIsWhiteFinal);
+            setCurrentPly(0);
+            setPositions(new Array(moves.length + 1).fill(null));
+            setMoveInfos(new Array(moves.length).fill(null));
+            setStatus('Game loaded. Click <b>Analyze</b>.');
+        } catch (e: any) {
+            logger.error('selectGame', e.message);
+            setStatus('PGN parse error: ' + e.message);
+        }
     };
 
-    // PGN paste path
-    const pastePgn = async (pgn: string) => {
+    const pastePgn = (pgn: string) => {
         try {
             const moves = buildMovesFromPgn(pgn);
             setGame({ headers: { White: '?', Black: '?' }, moves, userIsWhite: true });
@@ -105,57 +93,77 @@ export function App() {
             setPositions(new Array(moves.length + 1).fill(null));
             setMoveInfos(new Array(moves.length).fill(null));
             setStatus('PGN loaded. Click <b>Analyze</b>.');
-        } catch (e: any) { setStatus('PGN parse error: ' + e.message); }
+        } catch (e: any) {
+            logger.error('pastePgn', e.message);
+            setStatus('PGN parse error: ' + e.message);
+        }
     };
 
+    // --- analysis (cloud engine) ---
     const runAnalysis = async () => {
-        if (!game || !poolRef.current) return;
+        if (!game) return;
         const token = ++analysisTokenRef.current;
-        setStatus(`Analyzing ${game.moves.length + 1} positions in parallel on ${concurrency} threads…`);
+        setStatus('Analyzing in parallel on the cloud…');
+        setProgress(0);
         const fens = [game.moves.length ? game.moves[0].fenBefore : START_FEN, ...game.moves.map(m => m.fenAfter)];
         setPositions(new Array(fens.length).fill(null));
         setMoveInfos(new Array(game.moves.length).fill(null));
-        let done = 0;
-        const promises = fens.map((fen, i) => poolRef.current!.analyze(fen, depth).then(info => {
+
+        try {
+            const results = await analyzeAll(fens, depth, (done, total) => {
+                if (token === analysisTokenRef.current) setProgress(Math.round((done / total) * 100));
+            });
+
             if (token !== analysisTokenRef.current) return;
-            done++;
-            setProgress(Math.round((done / fens.length) * 100));
-            if (!info) return;
-            // Convert best UCI to SAN
-            const bestSan = info.bestMoveUci ? uciToSan(fen, info.bestMoveUci) : null;
-            const enriched: PositionInfo = { ...info, bestSan };
-            setPositions(prev => { const next = [...prev]; next[i] = enriched; return next; });
-            if (i > 0) {
+
+            // Convert to PositionInfo, with best-move SAN
+            const infos: PositionInfo[] = results.map((r, i) => {
+                const pi = toPositionInfo(r, fens[i]);
+                pi.bestSan = pi.bestMoveUci ? uciToSan(fens[i], pi.bestMoveUci) : null;
+                return pi;
+            });
+            setPositions(infos);
+
+            // Build moveInfos
+            const mi: (MoveInfo | null)[] = new Array(game.moves.length).fill(null);
+            for (let i = 1; i < infos.length; i++) {
+                const before = infos[i - 1];
+                const after = infos[i];
                 const moveIdx = i - 1;
-                const before = enriched; // placeholder, will compute loss in a follow-up
                 const mover = game.moves[moveIdx].color;
-                const prevPos = i > 0 ? null : null; // we have positions[i-1] but we're updating async
-                // Loss computed when both before/after exist:
-                const afterCp = enriched.cpWhitePov;
-                // We need the previous slot; this works because positions[i-1] was already written by its own promise
-                // but it may not be ready yet. Use the direct read from the captured enriched and re-pull from state:
-                setPositions(prev => {
-                    const beforePos = prev[i - 1];
-                    if (!beforePos) return prev;
-                    const loss = mover === 'w' ? Math.max(0, beforePos.cpWhitePov - afterCp) : Math.max(0, afterCp - beforePos.cpWhitePov);
-                    const info2: MoveInfo = {
-                        ply: moveIdx + 1,
-                        loss,
-                        classification: classify(loss, enriched.score?.type === 'mate'),
-                        bestSanBefore: beforePos.bestSan,
-                        playedSan: game.moves[moveIdx].san,
-                        isUserMove: game.userIsWhite === (mover === 'w'),
-                    };
-                    setMoveInfos(mi => { const n = [...mi]; n[moveIdx] = info2; return n; });
-                    return prev;
-                });
+                const loss = mover === 'w' ? Math.max(0, before.cpWhitePov - after.cpWhitePov) : Math.max(0, after.cpWhitePov - before.cpWhitePov);
+                mi[moveIdx] = {
+                    ply: moveIdx + 1,
+                    loss,
+                    classification: classify(loss, after.score?.type === 'mate'),
+                    bestSanBefore: before.bestSan,
+                    playedSan: game.moves[moveIdx].san,
+                    isUserMove: game.userIsWhite === (mover === 'w'),
+                };
             }
-        }));
-        await Promise.all(promises);
-        if (token === analysisTokenRef.current) {
-            setStatus(`Analysis complete — ${done} positions evaluated.`);
+            setMoveInfos(mi);
+            setStatus(`Analysis complete — ${infos.length} positions evaluated.`);
+            setProgress(100);
+        } catch (e: any) {
+            logger.error('runAnalysis', e.message);
+            setStatus('Analysis failed: ' + e.message);
         }
     };
+
+    // Keyboard navigation
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (!game) return;
+            const tag = (e.target as HTMLElement)?.tagName || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+            if (e.key === 'ArrowLeft') setCurrentPly(p => Math.max(0, p - 1));
+            if (e.key === 'ArrowRight') setCurrentPly(p => Math.min(game.moves.length, p + 1));
+            if (e.key === 'ArrowUp') setCurrentPly(0);
+            if (e.key === 'ArrowDown') setCurrentPly(game.moves.length);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [game]);
 
     const curPos = positions[currentPly] ?? null;
     const lastMove = useMemo(() => {
@@ -169,7 +177,7 @@ export function App() {
     const detail = (() => {
         if (!game) return null;
         if (currentPly === 0) {
-            return <div><div style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 600 }}>Starting position</div><div style={{ color: 'var(--text-dim)' }}>{curPos ? `eval: ${formatEval(curPos)}` : 'not analyzed yet'}</div></div>;
+            return <div><div style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 600 }}>Starting position</div><div style={{ color: 'var(--text-dim)' }}>{curPos ? `eval: ${formatEval(curPos)}` : 'click Analyze'}</div></div>;
         }
         const mv = game.moves[currentPly - 1];
         const mi = moveInfos[currentPly - 1];
@@ -190,7 +198,7 @@ export function App() {
         <div style={{ maxWidth: 1480, margin: '0 auto', padding: '24px 16px' }}>
             <h1 style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 600, margin: 0, letterSpacing: '-.3px' }}>Chesstown</h1>
             <p style={{ color: 'var(--text-dim)', maxWidth: 720, marginTop: 6 }}>
-                Free chess analyzer with multi-threaded local Stockfish (5 versions, including SF 18.0.5 WASM) and an AI coach powered by Llama 3.3 70B. Pull a game from chess.com, paste a PGN, or analyze a FEN.
+                Free chess analyzer with cloud Stockfish (SF 18+) and an AI coach powered by Llama 3.3 70B. Pull a game from chess.com, paste a PGN, or analyze a FEN.
             </p>
 
             <div className="card" style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -221,7 +229,7 @@ export function App() {
                             else if (oppResult === 'win') { tag = 'loss'; txt = 'Loss'; }
                             const date = new Date(g.end_time * 1000).toLocaleDateString();
                             return (
-                                <div key={i} onClick={() => selectGame(g)} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 5, border: '1px solid transparent', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--panel-2)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                <div key={i} onClick={() => selectGame(g)} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 5, border: '1px solid transparent', cursor: 'pointer' }}>
                                     <span><b>vs {opp}</b> · {date} · {g.time_class}</span>
                                     <span style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 8px', borderRadius: 3, border: `1px solid ${tag === 'win' ? 'var(--accent)' : tag === 'loss' ? 'var(--blunder)' : 'var(--line)'}`, color: tag === 'win' ? 'var(--accent)' : tag === 'loss' ? 'var(--blunder)' : 'var(--text-dim)' }}>{txt}</span>
                                 </div>
@@ -237,12 +245,12 @@ export function App() {
                         <div>
                             <div className="eyebrow" style={{ marginBottom: 6 }}>ENGINE DEPTH</div>
                             <div style={{ display: 'inline-flex', gap: 4, padding: 3, background: 'var(--bg)', borderRadius: 6, border: '1px solid var(--line)' }}>
-                                {[10, 14, 18, 22].map(d => (
-                                    <button key={d} onClick={() => setDepth(d)} style={{ background: depth === d ? 'var(--accent)' : 'transparent', color: depth === d ? '#0c0c0c' : 'var(--text-dim)', border: 'none', fontWeight: depth === d ? 600 : 500, padding: '6px 14px', borderRadius: 4 }}>{d === 10 ? 'Fast' : d === 14 ? 'Balanced' : d === 18 ? 'Deep' : 'Ultra'}</button>
+                                {[12, 16, 20].map(d => (
+                                    <button key={d} onClick={() => setDepth(d)} style={{ background: depth === d ? 'var(--accent)' : 'transparent', color: depth === d ? '#0c0c0c' : 'var(--text-dim)', border: 'none', fontWeight: depth === d ? 600 : 500, padding: '6px 14px', borderRadius: 4 }}>{d === 12 ? 'Fast' : d === 16 ? 'Balanced' : 'Deep'}</button>
                                 ))}
                             </div>
                         </div>
-                        <button onClick={runAnalysis} disabled={!poolRef.current || engineStatus !== 'ready'}>Analyze this game</button>
+                        <button onClick={runAnalysis}>Analyze this game</button>
                         <button className="ghost" onClick={() => setShowEngineModal(true)}>Engine settings</button>
                     </div>
                     {progress > 0 && progress < 100 && (
@@ -250,7 +258,7 @@ export function App() {
                             <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
                                 <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg, var(--accent), var(--accent-2))', transition: 'width .2s' }} />
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)', marginTop: 4 }}>{progress}% · {concurrency} threads</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)', marginTop: 4 }}>{progress}% · cloud engine</div>
                         </div>
                     )}
                 </div>
@@ -309,26 +317,9 @@ export function App() {
             {showEngineModal && (
                 <EngineSettingsModal
                     modelId={modelId}
-                    onModelChange={(id) => { setModelId(id); ensurePool(id); }}
-                    onOptionsChange={setModelOpts}
-                    onReinstall={async () => {
-                        const m = getEngineById(modelId);
-                        await cacheDelete(modelId + '_js');
-                        await cacheDelete(modelId + '_wasm');
-                        ensurePool(modelId);
-                    }}
-                    onUninstall={async () => {
-                        await cacheDelete(modelId + '_js');
-                        await cacheDelete(modelId + '_wasm');
-                        if (poolRef.current) poolRef.current.terminate();
-                        poolRef.current = null;
-                        setEngineStatus('not_installed');
-                        setEngineStatusMsg('');
-                    }}
-                    engineStatus={engineStatus}
-                    engineStatusMsg={engineStatusMsg}
+                    onModelChange={(id) => setModelId(id)}
                     onClose={() => setShowEngineModal(false)}
-                    onLoad={() => ensurePool(modelId)}
+                    models={ENGINE_MODELS}
                 />
             )}
         </div>

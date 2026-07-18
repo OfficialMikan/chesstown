@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PositionInfo, MoveInfo } from '../engine/types';
+import type { PositionInfo, MoveInfo } from '../lib/types';
 import { templateBiggestMistake, templateExplainPosition } from '../lib/coachTemplates';
 import { formatEval } from '../lib/chess';
 

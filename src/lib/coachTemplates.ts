@@ -1,4 +1,4 @@
-import type { PositionInfo, MoveInfo } from '../engine/types';
+import type { PositionInfo, MoveInfo } from '../lib/types';
 import { formatEval } from './chess';
 
 export function templateExplainPosition(pos: PositionInfo | null, ply: number, lastMove: { san: string; info: MoveInfo } | null): string {

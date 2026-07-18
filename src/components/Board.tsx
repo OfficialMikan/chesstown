@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { fenToBoard } from '../lib/chess';
-import type { PositionInfo } from '../engine/types';
+import type { PositionInfo } from '../lib/types';
 
 type Props = {
     fen: string;

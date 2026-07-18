@@ -1,4 +1,4 @@
-import type { MoveInfo } from '../engine/types';
+import type { MoveInfo } from '../lib/types';
 
 type Props = {
     moves: { ply: number; moveNumber: number; color: 'w' | 'b'; san: string }[];

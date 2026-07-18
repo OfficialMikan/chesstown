@@ -1,4 +1,4 @@
-import type { MoveInfo } from '../engine/types';
+import type { MoveInfo } from '../lib/types';
 
 export function SummaryCards({ moves, moveInfos, userIsWhite, onJump }: { moves: { ply: number; moveNumber: number; color: 'w' | 'b'; san: string }[]; moveInfos: (MoveInfo | null)[]; userIsWhite: boolean; onJump: (ply: number) => void }) {
     const stats = { w: { loss: 0, count: 0, b: 0, m: 0, i: 0, g: 0 }, b: { loss: 0, count: 0, b: 0, m: 0, i: 0, g: 0 } };
